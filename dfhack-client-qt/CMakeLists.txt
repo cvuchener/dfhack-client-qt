@@ -4,7 +4,6 @@ project(libdfhack-client-qt)
 set(PUBLIC_HEADERS
 	Client.h
 	Function.h
-	Notifier.h
 	Core.h
 	globals.h
 )
@@ -12,11 +11,9 @@ set(SOURCES
 	Client.cpp
 	ClientPrivate.cpp
 	Core.cpp
-	Notifier.cpp
 )
 qt6_wrap_cpp(MOC_SOURCES
 	Client.h
-	Notifier.h
 	ClientPrivate.h
 )
 

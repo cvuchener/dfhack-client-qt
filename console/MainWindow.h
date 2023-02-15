@@ -23,12 +23,12 @@
 #include "ui_MainWindow.h"
 
 #include <QLabel>
+#include <QFutureWatcher>
 
 #include <memory>
 
 #include <dfhack-client-qt/Client.h>
 #include <dfhack-client-qt/Core.h>
-#include <dfhack-client-qt/Notifier.h>
 
 class MainWindow: public QMainWindow, private Ui::MainWindow
 {
@@ -46,9 +46,9 @@ private slots:
 
 	void dfhackConnectionChanged(bool connected);
 	void dfhackSocketError(QAbstractSocket::SocketError error, const QString &error_string);
-	void dfhackTextMessage(DFHack::Color color, const QString &text);
+	void dfhackTextMessage(int begin, int end);
 	void dfhackCommandStarted();
-	void dfhackCommandFinished(DFHack::CommandResult result);
+	void dfhackCommandFinished();
 
 private:
 	QLabel *connection_status;
@@ -57,6 +57,9 @@ private:
 	DFHack::Core::RunCommand run_command;
 	DFHack::Core::Suspend suspend;
 	DFHack::Core::Resume resume;
+
+	QFutureWatcher<DFHack::CommandResult> command_watcher;
+	QFutureWatcher<std::pair<DFHack::Color, QString>> notification_watcher;
 
 	QTextBlockFormat command_format, notification_format, result_format;
 	QTextCharFormat char_format;

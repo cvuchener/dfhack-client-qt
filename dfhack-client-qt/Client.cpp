@@ -32,7 +32,7 @@ Client::Client(QObject *parent)
 		// Invalidate all current bindings
 		QMutexLocker lock(&bindings_mutex);
 		for (const auto &p: bindings)
-			p.second->valid = false;
+			p.second->result = makeFailedResult();
 		bindings.clear();
 	});
 	thread.start();
@@ -41,14 +41,14 @@ Client::Client(QObject *parent)
 Client::~Client()
 {
 	// Disconnect and wait
-	std::future<DFHack::CommandResult> result;
+	QFuture<CommandResult> result;
+	QFuture<TextNotification> notifications;
 	{
 		QMutexLocker lock(&p->mutex);
 		if (p->socket.state() == QAbstractSocket::ConnectedState)
-			 result = p->enqueueCall(MessageHeader::RequestQuit, nullptr, nullptr, nullptr);
+			 std::tie(result, notifications) = p->enqueueCall(MessageHeader::RequestQuit, nullptr, nullptr);
 	}
-	if (result.valid())
-		result.get();
+	result.waitForFinished();
 	thread.quit();
 	thread.wait();
 }
@@ -70,20 +70,25 @@ bool Client::disconnect()
 	QMutexLocker lock(&p->mutex);
 	if (p->socket.state() != QAbstractSocket::ConnectedState)
 		return false;
-	return p->enqueueCall(MessageHeader::RequestQuit, nullptr, nullptr, nullptr).valid();
+	return p->enqueueCall(MessageHeader::RequestQuit, nullptr, nullptr).first.isValid();
 }
 
-std::future<CommandResult> Client::call(int16_t id,
-					const google::protobuf::MessageLite *in,
-					google::protobuf::MessageLite *out,
-					CallNotifier *notifier)
+std::pair<QFuture<CommandResult>, QFuture<TextNotification>> Client::call(int16_t id,
+					const google::protobuf::MessageLite &in,
+					google::protobuf::MessageLite &out)
 {
 	QMutexLocker lock(&p->mutex);
 	if (p->socket.state() != QAbstractSocket::ConnectedState) {
-		if (notifier)
-			emit notifier->finished(CommandResult::LinkFailure);
-		return std::future<CommandResult>();
+		return {makeFailedResult(), {}};
 	}
-	return p->enqueueCall(id, in, out, notifier);
+	return p->enqueueCall(id, &in, &out);
+}
+
+QFuture<CommandResult> Client::makeFailedResult()
+{
+	QPromise<CommandResult> p;
+	p.addResult(CommandResult::LinkFailure);
+	p.finish();
+	return p.future();
 }
 

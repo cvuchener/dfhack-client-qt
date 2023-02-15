@@ -22,7 +22,7 @@
 #include <QMutex>
 #include <QTcpSocket>
 #include <queue>
-#include <future>
+#include <QPromise>
 
 #include <dfhack-client-qt/Client.h>
 
@@ -61,8 +61,6 @@ enum class State {
 	Disconnecting,
 };
 
-class CallNotifier;
-
 class ClientPrivate: public QObject
 {
 	Q_OBJECT
@@ -79,22 +77,22 @@ public:
 		int id;
 		const google::protobuf::MessageLite *in;
 		google::protobuf::MessageLite *out;
-		CallNotifier *notifier;
-		std::promise<CommandResult> promise;
+		QPromise<CommandResult> result;
+		QPromise<TextNotification> notifications;
 
 		call_t(int id,
 		       const google::protobuf::MessageLite *in,
-		       google::protobuf::MessageLite *out,
-		       CallNotifier *notifier);
+		       google::protobuf::MessageLite *out);
+
+		void finish(CommandResult result);
 	};
 	std::queue<call_t> call_queue;
 
 	void sendConnect(const QString &host, quint16 port);
-	std::future<CommandResult> enqueueCall(
+	std::pair<QFuture<CommandResult>, QFuture<TextNotification>> enqueueCall(
 			int id,
 			const google::protobuf::MessageLite *in,
-			google::protobuf::MessageLite *out,
-			CallNotifier *notifier);
+			google::protobuf::MessageLite *out);
 
 private:
 	void sendCall();
