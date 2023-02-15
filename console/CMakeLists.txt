@@ -5,10 +5,10 @@ set(SOURCES
 	MainWindow.cpp
 	main.cpp
 )
-qt5_wrap_cpp(MOC_SOURCES
+qt6_wrap_cpp(MOC_SOURCES
 	MainWindow.h
 )
-qt5_wrap_ui(UI_SOURCES
+qt6_wrap_ui(UI_SOURCES
 	MainWindow.ui
 )
 
@@ -19,8 +19,7 @@ include_directories(
 )
 
 add_executable(dfhack-qt-console ${SOURCES} ${UI_SOURCES} ${MOC_SOURCES})
-qt5_use_modules(dfhack-qt-console Widgets Network)
-target_link_libraries(dfhack-qt-console dfhack-client-qt ${PROTOBUF_LIBRARIES})
+target_link_libraries(dfhack-qt-console dfhack-client-qt ${PROTOBUF_LIBRARIES} Qt::Widgets)
 
 install(TARGETS dfhack-qt-console
 	RUNTIME DESTINATION bin)

@@ -51,7 +51,7 @@ ClientPrivate::ClientPrivate(Client *client, QThread *thread, QObject *parent)
 	        this, &ClientPrivate::connected);
 	connect(&socket, &QAbstractSocket::disconnected,
 	        this, &ClientPrivate::disconnected);
-	connect(&socket, QOverload<QAbstractSocket::SocketError>::of(&QAbstractSocket::error),
+	connect(&socket, &QAbstractSocket::errorOccurred,
 		this, &ClientPrivate::error);
 }
 
