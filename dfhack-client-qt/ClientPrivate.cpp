@@ -20,8 +20,6 @@
 
 #include <QtDebug>
 
-#include <dfhack-client-qt/Notifier.h>
-
 using namespace DFHack;
 
 constexpr char HandshakePacket::RequestMagic[HandshakePacket::MagicSize];
@@ -29,13 +27,18 @@ constexpr char HandshakePacket::ReplyMagic[HandshakePacket::MagicSize];
 
 ClientPrivate::call_t::call_t(int id,
 			      const google::protobuf::MessageLite *in,
-			      google::protobuf::MessageLite *out,
-			      CallNotifier *notifier)
+			      google::protobuf::MessageLite *out)
 	: id(id)
 	, in(in)
 	, out(out)
-	, notifier(notifier)
 {
+}
+
+void ClientPrivate::call_t::finish(CommandResult cr)
+{
+	result.addResult(cr);
+	result.finish();
+	notifications.finish();
 }
 
 ClientPrivate::ClientPrivate(Client *client, QThread *thread, QObject *parent)
@@ -71,20 +74,20 @@ void ClientPrivate::sendConnect(const QString &host, quint16 port)
 	socket.connectToHost(host, port);
 }
 
-std::future<CommandResult> ClientPrivate::enqueueCall(
+std::pair<QFuture<CommandResult>, QFuture<TextNotification>> ClientPrivate::enqueueCall(
 		int id,
 		const google::protobuf::MessageLite *in,
-		google::protobuf::MessageLite *out,
-		CallNotifier *notifier)
+		google::protobuf::MessageLite *out)
 {
-	call_queue.emplace(id, in, out, notifier);
-	auto future = call_queue.back().promise.get_future();
+	call_queue.emplace(id, in, out);
+	auto result = call_queue.back().result.future();
+	auto notifications = call_queue.back().notifications.future();
 #ifdef DFHACK_CLIENT_QT_DEBUG
 	qDebug() << "queue RPC call";
 #endif
 	if (state == State::Ready && call_queue.size() == 1)
 		QMetaObject::invokeMethod(this, &ClientPrivate::sendCall);
-	return future;
+	return {result, notifications};
 }
 
 void ClientPrivate::sendCall()
@@ -122,9 +125,8 @@ void ClientPrivate::sendNextCall()
 		write(&hdr);
 		write(msg.data(), msg.size());
 	}
-	if (call.notifier)
-		emit call.notifier->started();
-
+	call.result.start();
+	call.notifications.start();
 }
 
 void ClientPrivate::readyRead()
@@ -200,11 +202,10 @@ void ClientPrivate::readData()
 #ifdef DFHACK_CLIENT_QT_DEBUG
 				qDebug() << "DFHack notification:" << text;
 #endif
-				if (call.notifier) {
-					emit call.notifier->notification(
-							static_cast<Color>(fragment.color()),
-							text);
-				}
+				call.notifications.addResult(TextNotification {
+						static_cast<Color>(fragment.color()),
+						text
+					});
 			}
 			state = State::WaitingForMessageHeader;
 			break;
@@ -233,9 +234,7 @@ void ClientPrivate::finishCall(CommandResult result)
 	state = State::Ready;
 	auto call = std::move(call_queue.front());
 	call_queue.pop();
-	call.promise.set_value(result);
-	if (call.notifier)
-		emit call.notifier->finished(result);
+	call.finish(result);
 }
 
 void ClientPrivate::connected()
@@ -266,9 +265,7 @@ void ClientPrivate::disconnected()
 	// cancel pending calls
 	while (!call_queue.empty()) {
 		auto &call = call_queue.front();
-		if (call.notifier)
-			call.notifier->finished(CommandResult::LinkFailure);
-		call.promise.set_value(CommandResult::LinkFailure);
+		call.finish(CommandResult::LinkFailure);
 		call_queue.pop();
 	}
 	emit client->connectionChanged(false);

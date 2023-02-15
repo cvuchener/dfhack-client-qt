@@ -50,11 +50,11 @@ MainWindow::MainWindow(QWidget *parent)
 		this, &MainWindow::dfhackConnectionChanged);
 	connect(&client, &DFHack::Client::socketError,
 		this, &MainWindow::dfhackSocketError);
-	connect(&run_command.call_notifier, &DFHack::CallNotifier::notification,
+	connect(&notification_watcher, &decltype(notification_watcher)::resultsReadyAt,
 		this, &MainWindow::dfhackTextMessage);
-	connect(&run_command.call_notifier, &DFHack::CallNotifier::started,
+	connect(&command_watcher, &decltype(command_watcher)::started,
 		this, &MainWindow::dfhackCommandStarted);
-	connect(&run_command.call_notifier, &DFHack::CallNotifier::finished,
+	connect(&command_watcher, &decltype(command_watcher)::finished,
 		this, &MainWindow::dfhackCommandFinished);
 }
 
@@ -119,8 +119,11 @@ void MainWindow::on_send_command_action_triggered()
 
 	status_bar->clearMessage();
 
-	if (parse_command(command_line->text().toStdString(), run_command.in))
-		run_command.call();
+	if (parse_command(command_line->text().toStdString(), run_command.in)) {
+		auto [res, text] = run_command.call();
+		command_watcher.setFuture(res);
+		notification_watcher.setFuture(text);
+	}
 	else
 		status_bar->showMessage(tr("Failed to parse command"));
 	command_line->clear();
@@ -128,18 +131,27 @@ void MainWindow::on_send_command_action_triggered()
 
 void MainWindow::on_suspend_action_triggered()
 {
-	connect(&suspend.bind_notifier, &DFHack::BindNotifier::bound, [this](bool success) {
-		status_bar->showMessage(tr("Suspend bound: %1").arg(success));
-	});
-	if (!suspend)
-		qDebug() << "binding suspend" << suspend.bind().get();
+	if (!suspend) {
+		auto res = suspend.bind();
+		res.then([this](bool success) {
+			status_bar->showMessage(tr("Suspend bound: %1").arg(success));
+		});
+		res.waitForFinished();
+		qDebug() << "binding suspend" << res.result();
+	}
 	suspend.call();
 }
 
 void MainWindow::on_resume_action_triggered()
 {
-	if (!resume)
-		qDebug() << "binding resume" << resume.bind().get();
+	if (!resume) {
+		auto res = resume.bind();
+		res.then([this](bool success) {
+			status_bar->showMessage(tr("Resume bound: %1").arg(success));
+		});
+		res.waitForFinished();
+		qDebug() << "binding resume" << res.result();
+	}
 	resume.call();
 }
 
@@ -200,14 +212,17 @@ static QColor get_color_code(const QPalette &palette, DFHack::Color color)
 	}
 }
 
-void MainWindow::dfhackTextMessage(DFHack::Color color, const QString &text)
+void MainWindow::dfhackTextMessage(int begin, int end)
 {
-	QTextCursor cursor(console_output->document());
-	cursor.movePosition(QTextCursor::End);
-	QTextCharFormat format = char_format;
-	format.setForeground(get_color_code(console_output->palette(), color));
-	cursor.insertText(text, format);
-	console_output->setTextCursor(cursor);
+	for (int i = begin; i < end; ++i) {
+		auto [color, text] = notification_watcher.future().resultAt(i);
+		QTextCursor cursor(console_output->document());
+		cursor.movePosition(QTextCursor::End);
+		QTextCharFormat format = char_format;
+		format.setForeground(get_color_code(console_output->palette(), color));
+		cursor.insertText(text, format);
+		console_output->setTextCursor(cursor);
+	}
 }
 
 void MainWindow::dfhackCommandStarted()
@@ -218,9 +233,10 @@ void MainWindow::dfhackCommandStarted()
 	status_bar->showMessage("Executing command");
 }
 
-void MainWindow::dfhackCommandFinished(DFHack::CommandResult result)
+void MainWindow::dfhackCommandFinished()
 {
+	auto cr = command_watcher.future().result();
 	status_bar->showMessage(QString("result: %1")
-		.arg(static_cast<int>(result))
+		.arg(static_cast<int>(cr))
 	);
 }

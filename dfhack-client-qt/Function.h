@@ -39,15 +39,6 @@ class Function
 	std::shared_ptr<Client::Binding> binding;
 public:
 	/**
-	 * Notify bind progression
-	 */
-	BindNotifier bind_notifier;
-	/**
-	 * Notify call progression
-	 */
-	CallNotifier call_notifier;
-
-	/**
 	 * Input parameters
 	 */
 	In in;
@@ -71,7 +62,7 @@ public:
 
 	bool isBound() const
 	{
-		return binding && binding->valid && binding->ready() && binding->future.get();
+		return binding && binding->ready();
 	}
 
 	/**
@@ -80,12 +71,10 @@ public:
 	 * Function that do not have a fixed id must be bound before any call.
 	 *
 	 * \returns a future boolean telling if the bind operator was successful.
-	 *
-	 * bind_notifier will also emit the bound signal.
 	 */
-	std::shared_future<bool> bind()
+	QFuture<bool> bind()
 	{
-		return client->bind<In, Out>(Module, Name, binding, &bind_notifier);
+		return client->bind<In, Out>(Module, Name, binding);
 	}
 
 	/**
@@ -93,29 +82,25 @@ public:
 	 *
 	 * \ref in parameters must be initialized before calling this function.
 	 *
-	 * call_notifier will emit signals according to call progression. After
-	 * started signal \ref in is reusable, after finished signal with a
-	 * CommandResult::Ok parameter, \ref out is set to function results.
+	 * When the future are started \ref in is reusable, after they are
+	 * finished with a CommandResult::Ok value, \ref out is set to
+	 * function results.
 	 *
 	 * For a given Function object, \ref call must not be called again
 	 * before the previous call is finished.
 	 *
-	 * \returns a future command result, when set to CommandResult::Ok,
-	 * \ref out contains the call result.
+	 * \returns a pair of future command result and future text notifications,
+	 * if the command result is CommandResult::Ok, \ref out is ready.
 	 */
-	std::future<CommandResult> call()
+	std::pair<QFuture<CommandResult>, QFuture<TextNotification>> call()
 	{
 		if (id == -1) {
-			if (!isBound()) {
-				std::promise<CommandResult> result;
-				result.set_value(CommandResult::LinkFailure);
-				emit call_notifier.finished(CommandResult::LinkFailure);
-				return result.get_future();
-			}
-			return client->call(binding->reply.assigned_id(), &in, &out, &call_notifier);
+			if (!isBound())
+				return {Client::makeFailedResult(), {}};
+			return client->call(binding->reply.assigned_id(), in, out);
 		}
 		else
-			return client->call(id, &in, &out, &call_notifier);
+			return client->call(id, in, out);
 	}
 };
 

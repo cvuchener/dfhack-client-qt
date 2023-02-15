@@ -23,11 +23,9 @@
 #include <QMutex>
 #include <QObject>
 #include <QThread>
-
-#include <future>
+#include <QFuture>
 
 #include <dfhack-client-qt/globals.h>
-#include <dfhack-client-qt/Notifier.h>
 #include <dfhack-client-qt/CoreProtocol.pb.h>
 
 namespace DFHack
@@ -37,6 +35,8 @@ template<const char *, const char *, typename, typename, int = -1>
 class Function;
 
 class ClientPrivate;
+
+using TextNotification = std::pair<DFHack::Color, QString>;
 
 /**
  * DFHack remote protocol client
@@ -75,18 +75,15 @@ public:
 	/**
 	 * Low-level remote function call
 	 *
-	 * Call function \p id with parameters \p in and stores results in \p
-	 * out. If \p notifier is not null, signals are emitted according to
-	 * the function call progress.
+	 * Call function \p id with parameters \p in and stores results in \p out.
 	 *
-	 * \returns a future command result, if it is set to CommandResult::Ok,
-	 * \p out is ready.
+	 * \returns a pair of future command result and future text notifications,
+	 * if the command result is CommandResult::Ok, \p out is ready.
 	 */
-	std::future<CommandResult> call(
+	std::pair<QFuture<CommandResult>, QFuture<TextNotification>> call(
 			int16_t id,
-			const google::protobuf::MessageLite *in,
-			google::protobuf::MessageLite *out,
-			CallNotifier *notifier = nullptr);
+			const google::protobuf::MessageLite &in,
+			google::protobuf::MessageLite &out);
 
 signals:
 	/**
@@ -105,21 +102,13 @@ private:
 	struct Binding
 	{
 		dfproto::CoreBindReply reply;
-		CallNotifier notifier;
-		bool valid;
-		std::promise<bool> promise;
-		std::shared_future<bool> future;
-
-		Binding()
-			: valid(true)
-			, future(promise.get_future())
-		{
-		}
+		QFuture<CommandResult> result;
 
 		bool ready() const
 		{
-			auto status = future.wait_for(std::chrono::seconds(0));
-			return status == std::future_status::ready;
+			return result.isValid()
+				&& result.isFinished()
+				&& result.result() == CommandResult::Ok;
 		}
 	};
 
@@ -143,9 +132,8 @@ private:
 	QMutex bindings_mutex;
 
 	template<typename In, typename Out>
-	std::shared_future<bool> bind(const std::string &plugin, const std::string &name,
-				      std::shared_ptr<Binding> &binding,
-				      BindNotifier *notifier = nullptr)
+	QFuture<bool> bind(const std::string &plugin, const std::string &name,
+				      std::shared_ptr<Binding> &binding)
 	{
 		QMutexLocker lock(&bindings_mutex);
 		dfproto::CoreBindRequest request;
@@ -160,22 +148,13 @@ private:
 		auto it = bindings.lower_bound(request);
 		if (it == bindings.end() || !is_same_bind_request(it->first, request)) {
 			it = bindings.emplace_hint(it, request, std::make_shared<Binding>());
-			QObject::connect(&it->second->notifier, &CallNotifier::finished,
-					[promise = &it->second->promise] (CommandResult result)
-					{ promise->set_value(result == CommandResult::Ok); });
-			call(0, &it->first, &it->second->reply, &it->second->notifier);
+			it->second->result = call(0, it->first, it->second->reply).first;
 		}
 		binding = it->second;
-		if (notifier) {
-			if (it->second->ready())
-				emit notifier->bound(it->second->future.get());
-			else
-				QObject::connect(&it->second->notifier, &CallNotifier::finished,
-						[notifier] (CommandResult result)
-						{ emit notifier->bound(result == CommandResult::Ok); });
-		}
-		return it->second->future;
+		return it->second->result.then([](CommandResult cr){return cr == CommandResult::Ok;});
 	}
+
+	static QFuture<CommandResult> makeFailedResult();
 
 	template<const char *Module, const char *Name, typename In, typename Out, int id>
 	friend class Function;
