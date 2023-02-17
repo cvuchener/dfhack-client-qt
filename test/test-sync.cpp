@@ -21,6 +21,13 @@ struct ClientThread
 	}
 };
 
+template <typename T>
+T sync(QFuture<T> &&future)
+{
+	future.waitForFinished();
+	return future.result();
+}
+
 int main(int argc, char *argv[])
 {
 	QCoreApplication app(argc, argv);
@@ -28,11 +35,14 @@ int main(int argc, char *argv[])
 	ClientThread client_thread;
 	DFHack::Client &client = client_thread.client;
 
-	QEventLoop loop;
-	QObject::connect(&client, &DFHack::Client::connectionChanged, &loop, &QEventLoop::quit);
-	QObject::connect(&client, &DFHack::Client::socketError, &loop, &QEventLoop::quit);
-	client.connect("localhost", DFHack::Client::DefaultPort);
-	loop.exec();
+	QObject::connect(&client, &DFHack::Client::socketError, [](QAbstractSocket::SocketError, const QString &error) {
+		qCritical() << "socket error:" << error;
+	});
+
+	if (!sync(client.connect("localhost", DFHack::Client::DefaultPort))) {
+		qCritical() << "Failed to connect";
+		return -1;
+	}
 
 	{
 		DFHack::Core::RunCommand run_command(&client);
@@ -47,7 +57,7 @@ int main(int argc, char *argv[])
 
 	{
 		DFHack::Core::Suspend suspend(&client);
-		if (!suspend.bind().result()) {
+		if (!sync(suspend.bind())) {
 			qCritical() << "Failed to bind suspend";
 			return -1;
 		}
@@ -57,7 +67,7 @@ int main(int argc, char *argv[])
 	}
 	{
 		DFHack::Core::Resume resume(&client);
-		if (!resume.bind().result()) {
+		if (!sync(resume.bind())) {
 			qCritical() << "Failed to bind resume";
 			return -1;
 		}
@@ -66,7 +76,6 @@ int main(int argc, char *argv[])
 		qInfo() << "resume: " << static_cast<int>(cr.result());
 	}
 
-	//client.disconnect();
-	//loop.exec();
+	client.disconnect().waitForFinished();
 	return 0;
 }
