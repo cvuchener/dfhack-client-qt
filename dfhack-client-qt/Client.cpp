@@ -306,6 +306,7 @@ void Client::readyRead()
 							static_cast<Color>(fragment.color()),
 							text
 						});
+					emit notification(static_cast<Color>(fragment.color()), text);
 				}
 				p->state = State::WaitingForMessageHeader;
 				break;

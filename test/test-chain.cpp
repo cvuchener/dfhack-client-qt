@@ -14,6 +14,9 @@ int main(int argc, char *argv[])
 	QObject::connect(&client, &DFHack::Client::socketError, [](QAbstractSocket::SocketError, const QString &error) {
 		qCritical() << "socket error:" << error;
 	});
+	QObject::connect(&client, &DFHack::Client::notification, [](DFHack::Color, const QString &text) {
+		qInfo() << text;
+	});
 
 	QFutureWatcher<void> watcher;
 	QObject::connect(&watcher, &QFutureWatcher<void>::finished, &app, &QCoreApplication::quit);

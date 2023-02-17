@@ -90,6 +90,10 @@ signals:
 	 * Signal emitted when the client socket emits errors.
 	 */
 	void socketError(QAbstractSocket::SocketError error, const QString &error_string);
+	/**
+	 * Signal emitted when a text notification is received.
+	 */
+	void notification(DFHack::Color color, const QString &text);
 
 private:
 	struct Private;
