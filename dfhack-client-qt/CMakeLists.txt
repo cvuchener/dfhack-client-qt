@@ -5,11 +5,12 @@ set(PUBLIC_HEADERS
 	Client.h
 	Function.h
 	Core.h
+	Basic.h
 	globals.h
+	static_string.h
 )
 set(SOURCES
 	Client.cpp
-	Core.cpp
 )
 qt6_wrap_cpp(MOC_SOURCES
 	Client.h

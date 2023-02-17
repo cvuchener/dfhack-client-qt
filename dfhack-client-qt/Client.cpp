@@ -338,7 +338,10 @@ void Client::readyRead()
 			break;
 		}
 		default:
-			qCritical() << "Unexpected data";
+			if (p->socket.bytesAvailable() > 0)
+				qCritical() << "Unexpected data"
+					<< ", state:" << static_cast<int>(p->state)
+					<< ", bytes:" << p->socket.bytesAvailable();
 			return;
 		}
 	}
@@ -475,15 +478,7 @@ void Client::invalidateBindings()
 {
 	QMutexLocker lock(&p->bindings_mutex);
 	for (const auto &[req, ptr]: p->bindings)
-		ptr->result = makeFailedResult();
+		ptr->result = {};
 	p->bindings.clear();
-}
-
-QFuture<CommandResult> Client::makeFailedResult()
-{
-	QPromise<CommandResult> p;
-	p.addResult(CommandResult::LinkFailure);
-	p.finish();
-	return p.future();
 }
 

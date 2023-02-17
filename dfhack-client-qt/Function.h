@@ -29,15 +29,19 @@ namespace DFHack
  *
  * In and Out are protocol buffers message types for parameters and results.
  *
- * Only set id for function with fixed ids, regular functions should leave the
- * default value and call bind before any call.
+ * Only set Id for functions with fixed ids, regular functions should leave
+ * the default value and call bind before any call.
  */
-template<const char *Module, const char *Name, typename In, typename Out, int id>
+template<static_string Module, static_string Name, typename In, typename Out, int Id = -1>
 class Function
 {
 	Client *client;
 	std::shared_ptr<Client::Binding> binding;
 public:
+	static inline constexpr std::string_view module = Module;
+	static inline constexpr std::string_view name = Name;
+	static inline constexpr int id = Id;
+
 	/**
 	 * Input parameters
 	 */
@@ -70,18 +74,18 @@ public:
 	 *
 	 * Function that do not have a fixed id must be bound before any call.
 	 *
-	 * \returns a future boolean telling if the bind operator was successful.
+	 * \returns a future boolean telling if the bind operation was successful.
 	 */
 	QFuture<bool> bind()
 	{
 		dfproto::CoreBindRequest request;
-		request.set_method(Name);
+		request.set_method(Name.c_str());
 		// descriptor is not available for lite messages.
 		//request.set_input_msg(In::descriptor()->name());
 		//request.set_output_msg(Out::descriptor()->name());
 		request.set_input_msg(In().GetTypeName());
 		request.set_output_msg(Out().GetTypeName());
-		request.set_plugin(Module);
+		request.set_plugin(Module.c_str());
 		binding = client->getBinding(request);
 		return binding->result.then([](CommandResult cr){return cr == CommandResult::Ok;});
 	}
@@ -103,9 +107,13 @@ public:
 	 */
 	std::pair<QFuture<CommandResult>, QFuture<TextNotification>> call()
 	{
-		if (id == -1) {
-			if (!isBound())
-				return {Client::makeFailedResult(), {}};
+		if constexpr (id == -1) {
+			if (!isBound()) {
+				QPromise<CommandResult> p;
+				p.addResult(CommandResult::LinkFailure);
+				p.finish();
+				return {p.future(), {}};
+			}
 			return client->call(binding->reply.assigned_id(), in, out);
 		}
 		else

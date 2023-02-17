@@ -3,7 +3,7 @@ project(dfhack-remote-client-qt)
 
 option(BUILD_CONSOLE_EXAMPLE "build DFHack remote console example" OFF)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Qt6 REQUIRED Network OPTIONAL_COMPONENTS Widgets)
