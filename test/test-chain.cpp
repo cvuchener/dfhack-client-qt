@@ -11,11 +11,9 @@ int main(int argc, char *argv[])
 	QCoreApplication app(argc, argv);
 	DFHack::Client client;
 
-	QEventLoop loop;
-	QObject::connect(&client, &DFHack::Client::connectionChanged, &loop, &QEventLoop::quit);
-	QObject::connect(&client, &DFHack::Client::socketError, &loop, &QEventLoop::quit);
-	client.connect("localhost", DFHack::Client::DefaultPort);
-	loop.exec();
+	QObject::connect(&client, &DFHack::Client::socketError, [](QAbstractSocket::SocketError, const QString &error) {
+		qCritical() << "socket error:" << error;
+	});
 
 	QFutureWatcher<void> watcher;
 	QObject::connect(&watcher, &QFutureWatcher<void>::finished, &app, &QCoreApplication::quit);
@@ -26,7 +24,11 @@ int main(int argc, char *argv[])
 
 	run_command.in.set_command("ls");
 	run_command.in.clear_arguments();
-	watcher.setFuture(run_command.call().first.then([&](DFHack::CommandResult cr) {
+	watcher.setFuture(client.connect("localhost", DFHack::Client::DefaultPort).then([&](bool success) {
+		if (!success)
+			throw std::runtime_error("Failed to connect");
+		return run_command.call().first;
+	}).unwrap().then([&](DFHack::CommandResult cr) {
 		qInfo() << "command result:" << static_cast<int>(cr);
 		return suspend.bind();
 	}).unwrap().then([&](bool success) {
@@ -42,8 +44,8 @@ int main(int argc, char *argv[])
 		return resume.call().first;
 	}).unwrap().then([&](DFHack::CommandResult cr) {
 		qInfo() << "resume: " << static_cast<int>(cr);
-		return;
-	}).onFailed([](std::exception &e) {
+		return client.disconnect();
+	}).unwrap().onFailed([](std::exception &e) {
 		qCritical() << e.what();
 	}));
 	return app.exec();

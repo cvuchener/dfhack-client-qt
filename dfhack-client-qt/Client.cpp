@@ -94,6 +94,7 @@ struct Client::Private
 	State state = State::Disconnected;
 	MessageHeader header; // current message header
 	std::queue<call_t> call_queue;
+	QPromise<bool> connect_promise;
 
 	Private(QObject *parent): socket(parent) {}
 };
@@ -129,24 +130,43 @@ Client::~Client()
 	}
 }
 
-void Client::connect(const QString &host, quint16 port)
+QFuture<bool> Client::connect(const QString &host, quint16 port)
 {
-	QMetaObject::invokeMethod(this, [this, host=host, port] () {
-		if (p->socket.state() != QAbstractSocket::UnconnectedState)
-			return;
-		assert(p->state == State::Disconnected);
-
+	QPromise<bool> promise;
+	auto res = promise.future();
+	QMetaObject::invokeMethod(this, [this, host=host, port, promise = std::move(promise)]() mutable {
+		switch (p->state) {
+		case State::Disconnected:
 #ifdef DFHACK_CLIENT_QT_DEBUG
-		qDebug() << "connecting to host";
+			qDebug() << "connecting to host";
 #endif
-		p->state = State::Connecting;
-		p->socket.connectToHost(host, port);
+			p->state = State::Connecting;
+			p->connect_promise = std::move(promise);
+			p->connect_promise.start();
+			p->socket.connectToHost(host, port);
+			return;
+		case State::Connecting:
+		case State::Handshake:
+			promise.start();
+			p->connect_promise.future().then([promise = std::move(promise)](bool success) mutable {
+				promise.addResult(success);
+				promise.finish();
+			});
+			return;
+		default:
+			promise.start();
+			promise.addResult(true);
+			promise.finish();
+			return;
+		}
 	});
+	return res;
 }
 
-void Client::disconnect()
+QFuture<void> Client::disconnect()
 {
-	enqueueCall(MessageHeader::RequestQuit, nullptr, nullptr);
+	return enqueueCall(MessageHeader::RequestQuit, nullptr, nullptr).first
+		.then([](CommandResult){});
 }
 
 std::pair<QFuture<CommandResult>, QFuture<TextNotification>> Client::call(int16_t id,
@@ -204,6 +224,7 @@ void Client::sendNextCall()
 		write(&hdr);
 		call.finish(CommandResult::Ok);
 		p->call_queue.pop();
+		p->socket.disconnectFromHost();
 	}
 	else {
 		std::string msg = call.in->SerializeAsString();
@@ -234,6 +255,7 @@ void Client::readyRead()
 				qCritical() << "Handshake message mismatch" << QByteArray(packet.magic, HandshakePacket::MagicSize);
 				p->state = State::Disconnected;
 				p->socket.close();
+				finishConnection(false);
 				return;
 			}
 #ifdef DFHACK_CLIENT_QT_DEBUG
@@ -241,7 +263,7 @@ void Client::readyRead()
 #endif
 
 			p->state = State::Ready;
-			emit connectionChanged(true);
+			finishConnection(true);
 			break;
 		}
 		case State::WaitingForMessageHeader:
@@ -324,6 +346,7 @@ void Client::disconnected()
 	if (p->state != State::Disconnecting) {
 		qWarning() << "Socket unexpectedly disconnected";
 	}
+	bool during_connection = p->state == State::Connecting || p->state == State::Handshake;
 	p->state = State::Disconnected;
 	p->socket.close();
 	// cancel pending calls
@@ -333,6 +356,8 @@ void Client::disconnected()
 		p->call_queue.pop();
 	}
 	invalidateBindings();
+	if (during_connection)
+		finishConnection(false);
 	emit connectionChanged(false);
 }
 
@@ -341,8 +366,18 @@ void Client::error(QAbstractSocket::SocketError error)
 	if (p->state == State::Disconnecting && error == QAbstractSocket::RemoteHostClosedError)
 		return;
 	qCritical() << "DFHack client socket error:" << p->socket.errorString();
+	if (p->state == State::Connecting)
+		finishConnection(false);
 	p->state = State::Disconnected;
 	emit socketError(error, p->socket.errorString());
+}
+
+void Client::finishConnection(bool success)
+{
+	p->connect_promise.addResult(success);
+	p->connect_promise.finish();
+	if (success)
+		emit connectionChanged(success);
 }
 
 void Client::finishCall(CommandResult result)

@@ -53,16 +53,20 @@ public:
 	 *
 	 * A connectionChanged or socketError signal will be emitted when
 	 * actual connection is done.
+	 *
+	 * \returns a future indicating connection success.
 	 */
-	void connect(const QString &host, quint16 port);
+	QFuture<bool> connect(const QString &host, quint16 port);
 	/**
 	 * Disconnect from DFHack server
 	 *
 	 * A connectionChanged signal is sent emitted when the socket is
 	 * disconnected. A socketError may also be emitted if it does happen as
 	 * expected by protocol.
+	 *
+	 * \return a future indicating when the disconnection is finished.
 	 */
-	void disconnect();
+	QFuture<void> disconnect();
 
 	/**
 	 * Low-level remote function call
@@ -103,6 +107,7 @@ private:
 	void disconnected();
 	void error(QAbstractSocket::SocketError error);
 
+	void finishConnection(bool success);
 	void finishCall(CommandResult result);
 
 	template<typename T> bool read(T *data);
