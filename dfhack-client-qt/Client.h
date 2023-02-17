@@ -27,12 +27,10 @@
 
 #include <dfhack-client-qt/globals.h>
 #include <dfhack-client-qt/CoreProtocol.pb.h>
+#include <dfhack-client-qt/static_string.h>
 
 namespace DFHack
 {
-
-template<const char *, const char *, typename, typename, int = -1>
-class Function;
 
 using TextNotification = std::pair<DFHack::Color, QString>;
 
@@ -81,6 +79,36 @@ public:
 			const google::protobuf::MessageLite &in,
 			google::protobuf::MessageLite &out);
 
+	struct Binding
+	{
+		/**
+		 * Reply to the bind request. Content is valid only if
+		 * \ref result is finished and not an error.
+		 *
+		 * Use assigned_id to get the call id.
+		 */
+		dfproto::CoreBindReply reply;
+		/**
+		 * Result for the bind request.
+		 */
+		QFuture<CommandResult> result;
+
+		/**
+		 * Check if reply is valid and can be used.
+		 */
+		bool ready() const
+		{
+			return result.isValid()
+				&& result.isFinished()
+				&& result.result() == CommandResult::Ok;
+		}
+	};
+	/**
+	 * Get a binding from a bind request. Bindings are cached so they are
+	 * actually only requested once. Bindings are invalidated when the
+	 * connection is lost.
+	 */
+	std::shared_ptr<Binding> getBinding(const dfproto::CoreBindRequest &);
 signals:
 	/**
 	 * Signal emitted when the client is connected or disconnected.
@@ -119,25 +147,7 @@ private:
 	template<typename T> bool write(const T *data);
 	bool write(const char *data, qint64 size);
 
-	struct Binding
-	{
-		dfproto::CoreBindReply reply;
-		QFuture<CommandResult> result;
-
-		bool ready() const
-		{
-			return result.isValid()
-				&& result.isFinished()
-				&& result.result() == CommandResult::Ok;
-		}
-	};
-	std::shared_ptr<Binding> getBinding(const dfproto::CoreBindRequest &);
 	void invalidateBindings();
-
-	static QFuture<CommandResult> makeFailedResult();
-
-	template<const char *Module, const char *Name, typename In, typename Out, int id>
-	friend class Function;
 };
 
 } // namespace DFHack

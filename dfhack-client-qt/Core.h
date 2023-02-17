@@ -24,18 +24,15 @@
 namespace DFHack
 {
 
-class Core
+namespace Core
 {
-	static constexpr char module[] = "";
-	static constexpr char bind[] = "CoreBind";
-	static constexpr char run_command[] = "CoreRunCommand";
-	static constexpr char suspend[] = "CoreSuspend";
-	static constexpr char resume[] = "CoreResume";
-public:
-	using Bind = Function<module, bind, dfproto::CoreBindRequest, dfproto::CoreBindReply, 0>;
-	using RunCommand = Function<module, run_command, dfproto::CoreRunCommandRequest, dfproto::EmptyMessage, 1>;
-	using Suspend = Function<module, suspend, dfproto::EmptyMessage, dfproto::IntMessage>;
-	using Resume = Function<module, resume, dfproto::EmptyMessage, dfproto::IntMessage>;
+	using BindMethod = Function<"", "BindMethod", dfproto::CoreBindRequest, dfproto::CoreBindReply, 0>;
+	using RunCommand = Function<"", "RunCommand", dfproto::CoreRunCommandRequest, dfproto::EmptyMessage, 1>;
+
+	using Suspend = Function<"", "CoreSuspend", dfproto::EmptyMessage, dfproto::IntMessage>;
+	using Resume = Function<"", "CoreResume", dfproto::EmptyMessage, dfproto::IntMessage>;
+
+	using RunLua = Function<"", "RunLua", dfproto::CoreRunLuaRequest, dfproto::StringListMessage>;
 };
 
 } // namespace DFHack
