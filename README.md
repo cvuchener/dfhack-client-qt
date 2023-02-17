@@ -4,7 +4,7 @@ DFHack remote client library for Qt applications
 How to build
 ------------
 
-This library depends on Protocol Buffers and Qt5 with Network module. Qt5's
+This library depends on Protocol Buffers and Qt6 with Network module. Qt6's
 Widgets module is also required for the console example.
 
 ### CMake options
@@ -18,26 +18,29 @@ How to use
 You need to create [Client](dfhack-client-qt/Client.h) object and call the
 `connect` method. A `connectionChanged` signal will be emitted when the client
 is ready for remote function calls. If the connection fails a `socketError`
-signal is emitted instead.
+signal is emitted instead. You can also use the returned QFuture to check the
+connection success.
 
 The best way to call remote function is to use
 [Function](dfhack-client-qt/Function.h) objects. You can check
-[Core.h](dfhack-client-qt/Core.h) for an example on how to conveniently declare
-Function types. Functions must be bound before the can be called. Bind
-operations and calls are asynchronous, they return immediately and completion
-is either signaled through the `bind_notifier` and `call_notifier` members (see
-[notifier classes](dfhack-client-qt/Notifier.h)) or with the `std::future`
-returned from the methods.
+[Core.h](dfhack-client-qt/Core.h) or [Basic.h](dfhack-client-qt/Basic.h) for an
+example on how to conveniently declare Function types. Functions must be bound
+before the can be called. Bind operations and calls are asynchronous, they
+return immediately. 
 
 ### Synchronous example
 
-Use `std::future::get` for waiting until completion.
+Use `QFuture::waitForFinished` to block until the call is finished. The client
+must be run in another thread. Calls will not progress if the client's thread
+is blocked.
 
 ```c++
 MyFunction my_function(&client);
 
 // bind function
-if (!my_function.bind().get()) {
+auto br = my_function.bind();
+br.waitForFinished();
+if (!br.result()) {
     // handle error here
 }
 
@@ -45,7 +48,9 @@ if (!my_function.bind().get()) {
 my_function.in.set_foo("bar");
 
 // call function
-if (my_function.call().get() != DFHack::CommandResult::Ok) {
+auto [cr, notifications] = my_function.call();
+cr.waitForFinished();
+if (cr.result() != DFHack::CommandResult::Ok) {
     // handle error here
 }
 
@@ -55,7 +60,12 @@ auto result = my_function.out.foo();
 // ...
 ```
 
-### Asynchronous signal example
+See also example in [test-sync](test/test-sync.cpp).
+
+
+### Asynchronous signal with QFutureWatcher example
+
+Use QFutureWatcher to get signals from futures.
 
 ```c++
 // in constructor
@@ -63,9 +73,9 @@ auto result = my_function.out.foo();
     // connect signals
     connect(&client, &DFHack::Client::connectionChanged,
             this, &Example::onConnectionChanged);
-    connect(&my_function.bind_notifier, &DFHack::BindNotifier::bound,
+    connect(&bind_watcher, &QFutureWatcher<bool>::finished,
             this, &Example::onFunctionBound);
-    connect(&my_function.call_notifier, &DFHack::CallNotifier::finished,
+    connect(&command_watcher, &QFutureWatcher<DFHack::CommandResult>::finished,
             this, &Example::onFunctionFinished);
 
 // ...
@@ -73,7 +83,7 @@ auto result = my_function.out.foo();
 void Example::onConnectionChanged(bool connected) {
     if (connected) {
         // functions can now be bound
-        my_function.bind()
+        bind_watcher.setFuture(my_function.bind());
     }
 }
 
@@ -85,7 +95,7 @@ void Example::onFunctionBound(bool success) {
 
     // the function can now be called
     my_function.in.set_foo("bar");
-    my_function.call();
+    command_watcher.setFuture(my_function.call().first);
 }
 
 void Example::onFunctionFinished(DFHack::CommandResult results)
