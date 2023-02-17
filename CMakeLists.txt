@@ -17,6 +17,7 @@ if (BUILD_CONSOLE_EXAMPLE)
 		message(FATAL_ERROR "Building console example requires Qt Widgets")
 	endif()
 endif()
+add_subdirectory(test)
 
 install(EXPORT DFHackClientQtTargets
 	FILE DFHackClientQtTargets.cmake
