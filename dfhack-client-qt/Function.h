@@ -74,7 +74,16 @@ public:
 	 */
 	QFuture<bool> bind()
 	{
-		return client->bind<In, Out>(Module, Name, binding);
+		dfproto::CoreBindRequest request;
+		request.set_method(Name);
+		// descriptor is not available for lite messages.
+		//request.set_input_msg(In::descriptor()->name());
+		//request.set_output_msg(Out::descriptor()->name());
+		request.set_input_msg(In().GetTypeName());
+		request.set_output_msg(Out().GetTypeName());
+		request.set_plugin(Module);
+		binding = client->getBinding(request);
+		return binding->result.then([](CommandResult cr){return cr == CommandResult::Ok;});
 	}
 
 	/**

@@ -88,6 +88,23 @@ struct call_t {
 	}
 };
 
+static auto bind_request_to_tuple(const dfproto::CoreBindRequest &br)
+{
+	return std::tie(br.plugin(), br.method(), br.input_msg(), br.output_msg());
+}
+struct bind_request_less {
+	bool operator()(const dfproto::CoreBindRequest &lhs,
+			const dfproto::CoreBindRequest &rhs) const
+	{
+		return bind_request_to_tuple(lhs) < bind_request_to_tuple(rhs);
+	}
+};
+static bool is_same_bind_request(const dfproto::CoreBindRequest &lhs,
+				 const dfproto::CoreBindRequest &rhs)
+{
+	return bind_request_to_tuple(lhs) == bind_request_to_tuple(rhs);
+}
+
 struct Client::Private
 {
 	QTcpSocket socket;
@@ -95,6 +112,9 @@ struct Client::Private
 	MessageHeader header; // current message header
 	std::queue<call_t> call_queue;
 	QPromise<bool> connect_promise;
+
+	std::map<dfproto::CoreBindRequest, std::shared_ptr<Binding>, bind_request_less> bindings;
+	QMutex bindings_mutex;
 
 	Private(QObject *parent): socket(parent) {}
 };
@@ -440,12 +460,23 @@ bool Client::write(const char *data, qint64 size)
 	return true;
 }
 
+std::shared_ptr<Client::Binding> Client::getBinding(const dfproto::CoreBindRequest &request)
+{
+	QMutexLocker lock(&p->bindings_mutex);
+	auto it = p->bindings.lower_bound(request);
+	if (it == p->bindings.end() || !is_same_bind_request(it->first, request)) {
+		it = p->bindings.emplace_hint(it, request, std::make_shared<Binding>());
+		it->second->result = call(0, it->first, it->second->reply).first;
+	}
+	return it->second;
+}
+
 void Client::invalidateBindings()
 {
-	QMutexLocker lock(&bindings_mutex);
-	for (const auto &p: bindings)
-		p.second->result = makeFailedResult();
-	bindings.clear();
+	QMutexLocker lock(&p->bindings_mutex);
+	for (const auto &[req, ptr]: p->bindings)
+		ptr->result = makeFailedResult();
+	p->bindings.clear();
 }
 
 QFuture<CommandResult> Client::makeFailedResult()
