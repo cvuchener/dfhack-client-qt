@@ -9,12 +9,10 @@ set(PUBLIC_HEADERS
 )
 set(SOURCES
 	Client.cpp
-	ClientPrivate.cpp
 	Core.cpp
 )
 qt6_wrap_cpp(MOC_SOURCES
 	Client.h
-	ClientPrivate.h
 )
 
 protobuf_generate_cpp(PROTO_SOURCES PROTO_HEADERS

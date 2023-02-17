@@ -34,8 +34,6 @@ namespace DFHack
 template<const char *, const char *, typename, typename, int = -1>
 class Function;
 
-class ClientPrivate;
-
 using TextNotification = std::pair<DFHack::Color, QString>;
 
 /**
@@ -53,24 +51,18 @@ public:
 	/**
 	 * Connect to DFHack server
 	 *
-	 * \returns false if the client is already connected, true if a
-	 * connection attempt was started.
-	 *
 	 * A connectionChanged or socketError signal will be emitted when
 	 * actual connection is done.
 	 */
-	bool connect(const QString &host, quint16 port);
+	void connect(const QString &host, quint16 port);
 	/**
 	 * Disconnect from DFHack server
-	 *
-	 * \returns false if the client is not connected, true if the quit
-	 * request was sent.
 	 *
 	 * A connectionChanged signal is sent emitted when the socket is
 	 * disconnected. A socketError may also be emitted if it does happen as
 	 * expected by protocol.
 	 */
-	bool disconnect();
+	void disconnect();
 
 	/**
 	 * Low-level remote function call
@@ -96,8 +88,29 @@ signals:
 	void socketError(QAbstractSocket::SocketError error, const QString &error_string);
 
 private:
-	QThread thread;
-	std::unique_ptr<ClientPrivate> p;
+	struct Private;
+	std::unique_ptr<Private> p;
+
+	std::pair<QFuture<CommandResult>, QFuture<TextNotification>> enqueueCall(
+			int id,
+			const google::protobuf::MessageLite *in,
+			google::protobuf::MessageLite *out);
+
+	void sendNextCall();
+
+	void readyRead();
+	void connected();
+	void disconnected();
+	void error(QAbstractSocket::SocketError error);
+
+	void finishCall(CommandResult result);
+
+	template<typename T> bool read(T *data);
+	bool read(QByteArray &data, qint64 size);
+	template<typename T> bool write(const T *data);
+	bool write(const char *data, qint64 size);
+
+	void invalidateBindings();
 
 	struct Binding
 	{
