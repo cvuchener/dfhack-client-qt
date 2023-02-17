@@ -119,8 +119,6 @@ private:
 	template<typename T> bool write(const T *data);
 	bool write(const char *data, qint64 size);
 
-	void invalidateBindings();
-
 	struct Binding
 	{
 		dfproto::CoreBindReply reply;
@@ -133,48 +131,8 @@ private:
 				&& result.result() == CommandResult::Ok;
 		}
 	};
-
-	static auto bind_request_to_tuple(const dfproto::CoreBindRequest &br)
-	{
-		return std::tie(br.plugin(), br.method(), br.input_msg(), br.output_msg());
-	}
-	struct bind_request_less {
-		bool operator()(const dfproto::CoreBindRequest &lhs,
-				const dfproto::CoreBindRequest &rhs) const
-		{
-			return bind_request_to_tuple(lhs) < bind_request_to_tuple(rhs);
-		}
-	};
-	static bool is_same_bind_request(const dfproto::CoreBindRequest &lhs,
-					 const dfproto::CoreBindRequest &rhs)
-	{
-		return bind_request_to_tuple(lhs) == bind_request_to_tuple(rhs);
-	}
-	std::map<dfproto::CoreBindRequest, std::shared_ptr<Binding>, bind_request_less> bindings;
-	QMutex bindings_mutex;
-
-	template<typename In, typename Out>
-	QFuture<bool> bind(const std::string &plugin, const std::string &name,
-				      std::shared_ptr<Binding> &binding)
-	{
-		QMutexLocker lock(&bindings_mutex);
-		dfproto::CoreBindRequest request;
-		request.set_method(name);
-		// descriptor is not available for lite messages.
-		//request.set_input_msg(In::descriptor()->name());
-		//request.set_output_msg(Out::descriptor()->name());
-		request.set_input_msg(In().GetTypeName());
-		request.set_output_msg(Out().GetTypeName());
-		request.set_plugin(plugin);
-
-		auto it = bindings.lower_bound(request);
-		if (it == bindings.end() || !is_same_bind_request(it->first, request)) {
-			it = bindings.emplace_hint(it, request, std::make_shared<Binding>());
-			it->second->result = call(0, it->first, it->second->reply).first;
-		}
-		binding = it->second;
-		return it->second->result.then([](CommandResult cr){return cr == CommandResult::Ok;});
-	}
+	std::shared_ptr<Binding> getBinding(const dfproto::CoreBindRequest &);
+	void invalidateBindings();
 
 	static QFuture<CommandResult> makeFailedResult();
 
