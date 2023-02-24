@@ -3,6 +3,7 @@ project(libdfhack-client-qt)
 
 set(PUBLIC_HEADERS
 	Client.h
+	CommandResult.h
 	Function.h
 	Core.h
 	Basic.h
@@ -11,6 +12,7 @@ set(PUBLIC_HEADERS
 )
 set(SOURCES
 	Client.cpp
+	CommandResult.cpp
 )
 qt6_wrap_cpp(MOC_SOURCES
 	Client.h
