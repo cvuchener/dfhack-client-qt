@@ -16,13 +16,35 @@
  *
  */
 
-#ifndef DFHACK_CLIENT_QT_GLOBALS_H
-#define DFHACK_CLIENT_QT_GLOBALS_H
+#ifndef DFHACK_CLIENT_QT_COMMAND_RESULT_H
+#define DFHACK_CLIENT_QT_COMMAND_RESULT_H
 
-#if defined(DFHACK_CLIENT_QT_LIBRARY)
-#	define DFHACK_CLIENT_QT_EXPORT Q_DECL_EXPORT
-#else
-#	define DFHACK_CLIENT_QT_EXPORT Q_DECL_IMPORT
-#endif
+#include <QMetaType>
+#include <dfhack-client-qt/globals.h>
+
+namespace DFHack
+{
+
+enum class CommandResult: int32_t
+{
+	LinkFailure = -3,
+	NeedsConsole = -2,
+	NotImplemented = -1,
+	Ok = 0,
+	Failure = 1,
+	WrongUsage = 2,
+	NotFound = 3,
+};
+
+DFHACK_CLIENT_QT_EXPORT const std::error_category &command_result_category();
+
+DFHACK_CLIENT_QT_EXPORT std::error_code make_error_code(CommandResult cr);
+
+} // namespace DFHack
+
+Q_DECLARE_METATYPE(DFHack::CommandResult);
+
+template<>
+struct std::is_error_code_enum<DFHack::CommandResult>: std::true_type {};
 
 #endif
