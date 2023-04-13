@@ -22,6 +22,7 @@
 #include <QFutureWatcher>
 #include <QTcpSocket>
 
+#include <algorithm>
 #include <queue>
 
 #include <QtDebug>
@@ -105,11 +106,24 @@ static bool is_same_bind_request(const dfproto::CoreBindRequest &lhs,
 	return bind_request_to_tuple(lhs) == bind_request_to_tuple(rhs);
 }
 
+enum class ReadStatus {
+	Partial,
+	Completed,
+	Failed,
+};
+
 struct Client::Private
 {
 	QTcpSocket socket;
 	State state = State::Disconnected;
-	MessageHeader header; // current message header
+	qint64 bytes_read;
+	union {
+		HandshakePacket handshake;
+		MessageHeader header; // current message header
+		char packet_data[std::max(sizeof(HandshakePacket), sizeof(MessageHeader))];
+	};
+	QByteArray payload;
+	dfproto::CoreTextNotification notification;
 	std::queue<call_t> call_queue;
 	QPromise<bool> connect_promise;
 
@@ -117,8 +131,39 @@ struct Client::Private
 	QMutex bindings_mutex;
 
 	Private(QObject *parent): socket(parent) {}
-};
 
+	ReadStatus read(char *data, qint64 size)
+	{
+		auto ret = socket.read(data+bytes_read, size-bytes_read);
+		if (ret == -1) {
+			qCritical() << "Failed to read data from socket";
+			state = State::Disconnected;
+			socket.close();
+			return ReadStatus::Failed;
+		}
+		bytes_read += ret;
+		return bytes_read < size ? ReadStatus::Partial : ReadStatus::Completed;
+	}
+	template<typename T> bool write(const T *data)
+	{
+		return write(reinterpret_cast<const char *>(data), sizeof(T));
+	}
+	bool write(const char *data, qint64 size)
+	{
+		while (size > 0) {
+			qint64 r;
+			if (-1 == (r = socket.write(data, size))) {
+				qCritical() << "Failed to write data to socket";
+				state = State::Disconnected;
+				socket.close();
+				return false;
+			}
+			data += r;
+			size -= r;
+		}
+		return true;
+	}
+};
 
 Client::Client(QObject *parent)
 	: QObject(parent)
@@ -241,7 +286,7 @@ void Client::sendNextCall()
 		hdr.id = MessageHeader::RequestQuit;
 		hdr.size = 0;
 		p->state = State::Disconnecting;
-		write(&hdr);
+		p->write(&hdr);
 		call.finish(CommandResult::Ok);
 		p->call_queue.pop();
 		p->socket.disconnectFromHost();
@@ -251,8 +296,9 @@ void Client::sendNextCall()
 		hdr.id = call.id;
 		hdr.size = msg.size();
 		p->state = State::WaitingForMessageHeader;
-		write(&hdr);
-		write(msg.data(), msg.size());
+		p->write(&hdr);
+		p->write(msg.data(), msg.size());
+		p->bytes_read = 0;
 	}
 }
 
@@ -266,13 +312,13 @@ void Client::readyRead()
 	while (p->state != State::Ready) {
 		switch (p->state) {
 		case State::Handshake: {
-			HandshakePacket packet;
-			if (!read(&packet))
+			auto ret = p->read(p->packet_data, sizeof(HandshakePacket));
+			if (ret == ReadStatus::Failed)
+				finishConnection(false);
+			if (ret == ReadStatus::Partial)
 				return;
-
-			if (!std::equal(&packet.magic[0], &packet.magic[HandshakePacket::MagicSize],
-					HandshakePacket::ReplyMagic)) {
-				qCritical() << "Handshake message mismatch" << QByteArray(packet.magic, HandshakePacket::MagicSize);
+			if (!std::ranges::equal(p->handshake.magic, HandshakePacket::ReplyMagic)) {
+				qCritical() << "Handshake message mismatch" << QByteArray(p->handshake.magic, HandshakePacket::MagicSize);
 				p->state = State::Disconnected;
 				p->socket.close();
 				finishConnection(false);
@@ -286,8 +332,8 @@ void Client::readyRead()
 			finishConnection(true);
 			break;
 		}
-		case State::WaitingForMessageHeader:
-			if (!read(&p->header))
+		case State::WaitingForMessageHeader: {
+			if (p->read(p->packet_data, sizeof(MessageHeader)) != ReadStatus::Completed)
 				return;
 			if (p->header.id == MessageHeader::ReplyFail) {
 				if (p->header.size < -3 || p->header.size > 3)
@@ -297,27 +343,27 @@ void Client::readyRead()
 			}
 			else {
 				p->state = State::WaitingForMessageContent;
+				p->payload.resize(p->header.size);
+				p->bytes_read = 0;
 			}
 			break;
-
+		}
 		case State::WaitingForMessageContent: {
 			auto &call = p->call_queue.front();
-			QByteArray reply;
-			if (!read(reply, p->header.size))
+			if (p->read(p->payload.data(), p->header.size) != ReadStatus::Completed)
 				return;
 			switch (p->header.id) {
 			case MessageHeader::ReplyResult:
-				if (!call.out->ParseFromArray(reply.data(), reply.size()))
+				if (!call.out->ParseFromArray(p->payload.data(), p->payload.size()))
 					finishCall(CommandResult::LinkFailure);
 				else
 					finishCall(CommandResult::Ok);
 				break;
 			case MessageHeader::ReplyText: {
-				dfproto::CoreTextNotification text;
-				if (!text.ParseFromArray(reply.data(), reply.size())) {
+				if (!p->notification.ParseFromArray(p->payload.data(), p->payload.size())) {
 					qCritical() << "Failed to parse CoreTextNotification";
 				}
-				for (const auto &fragment: text.fragments()) {
+				for (const auto &fragment: p->notification.fragments()) {
 					auto text = QString::fromStdString(fragment.text());
 #ifdef DFHACK_CLIENT_QT_DEBUG
 					qDebug() << "DFHack notification:" << text;
@@ -329,6 +375,7 @@ void Client::readyRead()
 					emit notification(static_cast<Color>(fragment.color()), text);
 				}
 				p->state = State::WaitingForMessageHeader;
+				p->bytes_read = 0;
 				break;
 			}
 			default:
@@ -355,11 +402,12 @@ void Client::connected()
 	qDebug() << "handshake";
 #endif
 
-	p->state = State::Handshake;
 	HandshakePacket packet;
-	std::copy_n(HandshakePacket::RequestMagic, HandshakePacket::MagicSize, packet.magic);
+	std::ranges::copy(HandshakePacket::RequestMagic, packet.magic);
 	packet.version = 1;
-	write(&packet);
+	p->write(&packet);
+	p->state = State::Handshake;
+	p->bytes_read = 0;
 }
 
 void Client::disconnected()
@@ -415,54 +463,6 @@ void Client::finishCall(CommandResult result)
 	call.finish(result);
 }
 
-template<typename T> bool Client::read(T *data)
-{
-	if (p->socket.bytesAvailable() < qint64(sizeof(T)))
-		return false;
-	if (-1 == p->socket.read(reinterpret_cast<char *>(data), sizeof(T))) {
-		qCritical() << "Failed to read data from socket";
-		p->state = State::Disconnected;
-		p->socket.close();
-		return false;
-	}
-	return true;
-}
-
-bool Client::read(QByteArray &data, qint64 size)
-{
-	if (p->socket.bytesAvailable() < size)
-		return false;
-	data.resize(size);
-	if (-1 == p->socket.read(data.data(), size)) {
-		qCritical() << "Failed to read data from socket";
-		p->state = State::Disconnected;
-		p->socket.close();
-		return false;
-	}
-	return true;
-}
-
-template<typename T> bool Client::write(const T *data)
-{
-	return write(reinterpret_cast<const char *>(data), sizeof(T));
-}
-
-bool Client::write(const char *data, qint64 size)
-{
-	while (size > 0) {
-		qint64 r;
-		if (-1 == (r = p->socket.write(data, size))) {
-			qCritical() << "Failed to write data to socket";
-			p->state = State::Disconnected;
-			p->socket.close();
-			return false;
-		}
-		data += r;
-		size -= r;
-	}
-	return true;
-}
-
 std::shared_ptr<Client::Binding> Client::getBinding(const dfproto::CoreBindRequest &request)
 {
 	QMutexLocker lock(&p->bindings_mutex);
@@ -481,4 +481,3 @@ void Client::invalidateBindings()
 		ptr->result = {};
 	p->bindings.clear();
 }
-
