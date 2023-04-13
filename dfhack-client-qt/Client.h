@@ -163,11 +163,6 @@ private:
 	void finishConnection(bool success);
 	void finishCall(CommandResult result);
 
-	template<typename T> bool read(T *data);
-	bool read(QByteArray &data, qint64 size);
-	template<typename T> bool write(const T *data);
-	bool write(const char *data, qint64 size);
-
 	void invalidateBindings();
 };
 
