@@ -293,7 +293,7 @@ void Client::sendNextCall()
 	}
 	else {
 		hdr.id = call.id;
-		hdr.size = call.in_msg.size();
+		hdr.size = static_cast<int32_t>(call.in_msg.size());
 		p->state = State::WaitingForMessageHeader;
 		p->write(&hdr);
 		p->write(call.in_msg.data(), call.in_msg.size());

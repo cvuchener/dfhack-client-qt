@@ -21,6 +21,7 @@
 
 #include <QMetaType>
 #include <dfhack-client-qt/globals.h>
+#include <system_error>
 
 namespace DFHack
 {

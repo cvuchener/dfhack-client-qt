@@ -19,6 +19,8 @@
 #ifndef DFHACK_CLIENT_QT_GLOBALS_H
 #define DFHACK_CLIENT_QT_GLOBALS_H
 
+#include <QtCore/QtGlobal>
+
 #if defined(DFHACK_CLIENT_QT_LIBRARY)
 #	define DFHACK_CLIENT_QT_EXPORT Q_DECL_EXPORT
 #else

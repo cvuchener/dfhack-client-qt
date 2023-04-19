@@ -21,6 +21,7 @@
 
 #include <dfhack-client-qt/Function.h>
 
+#include <dfhack-client-qt/globals.h>
 #include <dfhack-client-qt/BasicApi.pb.h>
 
 namespace DFHack
