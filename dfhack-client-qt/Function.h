@@ -40,21 +40,19 @@ class Function
 public:
 	static inline constexpr std::string_view module = Module;
 	static inline constexpr std::string_view name = Name;
+	using InputMessage = In;
+	using OutputMessage = Out;
 	static inline constexpr int id = Id;
-
-	/**
-	 * Input parameters
-	 */
-	In in;
-	/**
-	 * Output results
-	 */
-	Out out;
 
 	Function(Client *client)
 		: client(client)
 	{
 	}
+
+	/**
+	 * Create a message for input arguments.
+	 */
+	InputMessage args() const { return {}; }
 
 	/**
 	 * true if the function is ready to be called (bound or fixed id).
@@ -76,15 +74,12 @@ public:
 	 *
 	 * \returns a future boolean telling if the bind operation was successful.
 	 */
-	QFuture<bool> bind()
+	QFuture<bool> bind() requires (id == -1)
 	{
 		dfproto::CoreBindRequest request;
 		request.set_method(Name.c_str());
-		// descriptor is not available for lite messages.
-		//request.set_input_msg(In::descriptor()->name());
-		//request.set_output_msg(Out::descriptor()->name());
-		request.set_input_msg(In().GetTypeName());
-		request.set_output_msg(Out().GetTypeName());
+		request.set_input_msg(InputMessage().GetTypeName());
+		request.set_output_msg(OutputMessage().GetTypeName());
 		request.set_plugin(Module.c_str());
 		binding = client->getBinding(request);
 		return binding->result.then([](CommandResult cr){return cr == CommandResult::Ok;});
@@ -105,21 +100,43 @@ public:
 	 * \returns a pair of future command result and future text notifications,
 	 * if the command result is CommandResult::Ok, \ref out is ready.
 	 */
-	std::pair<QFuture<CommandResult>, QFuture<TextNotification>> call()
+	std::pair<QFuture<CallReply<OutputMessage>>, QFuture<TextNotification>>
+	call(const InputMessage &in = {})
 	{
-		if constexpr (id == -1) {
-			if (!isBound()) {
-				QPromise<CommandResult> p;
-				p.addResult(CommandResult::LinkFailure);
-				p.finish();
-				return {p.future(), {}};
-			}
-			return client->call(binding->reply.assigned_id(), in, out);
+		if (this->id == -1 && !isBound()) {
+			return {
+				QtFuture::makeReadyFuture(CallReply<OutputMessage>{CommandResult::LinkFailure}),
+				QtFuture::makeReadyFuture<TextNotification>(QList<TextNotification>{})
+			};
 		}
-		else
-			return client->call(id, in, out);
+		auto res = client->call(id == -1 ? binding->id : id, in, std::make_shared<Out>());
+		return {
+			res.first.then([](CallReply<> r) { return std::move(r).cast<OutputMessage>(); }),
+			res.second
+		};
 	}
 };
+
+template <typename T>
+concept BindableFunction = requires (T f) {
+	{ f.bind() } -> std::same_as<QFuture<bool>>;
+};
+
+/**
+ * Bind all the functions passed as parameters.
+ *
+ * \returns a future boolean indicating if all the functions where bound
+ * successfully.
+ */
+template <BindableFunction... Fs>
+QFuture<bool> bindAll(Fs &&...functions)
+{
+	QList<QFuture<bool>> futures;
+	(futures.append(functions.bind()), ...);
+	return QtFuture::whenAll(futures.begin(), futures.end()).then([](const QList<QFuture<bool>> &r) {
+		return std::ranges::all_of(r, &QFuture<bool>::result);
+	});
+}
 
 }
 

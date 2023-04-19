@@ -45,17 +45,19 @@ if (!br.result()) {
 }
 
 // set parameters
-my_function.in.set_foo("bar");
+auto my_function_args = my_function.args();
+my_function_args.set_foo("bar");
 
 // call function
-auto [cr, notifications] = my_function.call();
+auto [cr, notifications] = my_function.call(my_function_args);
 cr.waitForFinished();
-if (cr.result() != DFHack::CommandResult::Ok) {
+auto reply = cr.result();
+if (!reply) {
     // handle error here
 }
 
 // get results
-auto result = my_function.out.foo();
+auto result = reply->foo();
 
 // ...
 ```
@@ -75,7 +77,7 @@ Use QFutureWatcher to get signals from futures.
             this, &Example::onConnectionChanged);
     connect(&bind_watcher, &QFutureWatcher<bool>::finished,
             this, &Example::onFunctionBound);
-    connect(&command_watcher, &QFutureWatcher<DFHack::CommandResult>::finished,
+    connect(&command_watcher, &QFutureWatcher<DFHack::CallReply<MyFunctionReply>>::finished,
             this, &Example::onFunctionFinished);
 
 // ...
@@ -94,17 +96,18 @@ void Example::onFunctionBound(bool success) {
     }
 
     // the function can now be called
-    my_function.in.set_foo("bar");
-    command_watcher.setFuture(my_function.call().first);
+    auto my_function_args = my_function.args();
+    my_function_args.set_foo("bar");
+    command_watcher.setFuture(my_function.call(my_function_args).first);
 }
 
-void Example::onFunctionFinished(DFHack::CommandResult results)
+void Example::onFunctionFinished(DFHack::CallReply<MyFunctionReply> reply)
 {
-    if (results != DFHack::CommandResult::Ok) {
+    if (!reply) {
         // handle error here
     }
     else {
-        auto result = my_function.out.foo();
+        auto result = reply->foo();
         // ...
     }
 }

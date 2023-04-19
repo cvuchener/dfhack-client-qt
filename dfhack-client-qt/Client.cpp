@@ -64,26 +64,26 @@ enum class State {
 
 struct call_t {
 	int id;
-	const google::protobuf::MessageLite *in;
-	google::protobuf::MessageLite *out;
-	QPromise<CommandResult> result;
+	std::string in_msg;
+	std::shared_ptr<google::protobuf::MessageLite> out_msg;
+	QPromise<CallReply<>> result;
 	QPromise<TextNotification> notifications;
 
 	call_t(int id,
-	       const google::protobuf::MessageLite *in,
-	       google::protobuf::MessageLite *out)
+	       std::string &&in,
+	       std::shared_ptr<google::protobuf::MessageLite> &&out)
 		: id(id)
-		, in(in)
-		, out(out)
+		, in_msg(std::move(in))
+		, out_msg(std::move(out))
 	{
 	}
 
 	void finish(CommandResult cr)
 	{
 #ifdef DFHACK_CLIENT_QT_DEBUG
-			qDebug() << "finished call" << static_cast<int>(cr);
+		qDebug() << "finished call" << static_cast<int>(cr);
 #endif
-		result.addResult(cr);
+		result.addResult(CallReply<>{cr, std::move(out_msg)});
 		result.finish();
 		notifications.finish();
 	}
@@ -186,7 +186,7 @@ Client::~Client()
 		// Disconnect and wait
 		moveToThread(QThread::currentThread());
 		auto [result, notifications] = enqueueCall(MessageHeader::RequestQuit, nullptr, nullptr);
-		QFutureWatcher<CommandResult> watcher;
+		QFutureWatcher<CallReply<>> watcher;
 		QEventLoop loop;
 		QObject::connect(&watcher, &QFutureWatcher<CommandResult>::finished,
 			&loop, &QEventLoop::quit);
@@ -231,22 +231,22 @@ QFuture<bool> Client::connect(const QString &host, quint16 port)
 QFuture<void> Client::disconnect()
 {
 	return enqueueCall(MessageHeader::RequestQuit, nullptr, nullptr).first
-		.then([](CommandResult){});
+		.then([](auto){});
 }
 
-std::pair<QFuture<CommandResult>, QFuture<TextNotification>> Client::call(int16_t id,
+std::pair<QFuture<CallReply<>>, QFuture<TextNotification>> Client::call(int16_t id,
 					const google::protobuf::MessageLite &in,
-					google::protobuf::MessageLite &out)
+					std::shared_ptr<google::protobuf::MessageLite> out)
 {
-	return enqueueCall(id, &in, &out);
+	return enqueueCall(id, &in, std::move(out));
 }
 
-std::pair<QFuture<CommandResult>, QFuture<TextNotification>> Client::enqueueCall(
+std::pair<QFuture<CallReply<>>, QFuture<TextNotification>> Client::enqueueCall(
 		int id,
 		const google::protobuf::MessageLite *in,
-		google::protobuf::MessageLite *out)
+		std::shared_ptr<google::protobuf::MessageLite> &&out)
 {
-	call_t call(id, in, out);
+	call_t call(id, in ? in->SerializeAsString() : std::string{}, std::move(out));
 	auto result = call.result.future();
 	auto notifications = call.notifications.future();
 	QMetaObject::invokeMethod(this, [this, call = std::move(call)]() mutable {
@@ -292,12 +292,11 @@ void Client::sendNextCall()
 		p->socket.disconnectFromHost();
 	}
 	else {
-		std::string msg = call.in->SerializeAsString();
 		hdr.id = call.id;
-		hdr.size = msg.size();
+		hdr.size = call.in_msg.size();
 		p->state = State::WaitingForMessageHeader;
 		p->write(&hdr);
-		p->write(msg.data(), msg.size());
+		p->write(call.in_msg.data(), call.in_msg.size());
 		p->bytes_read = 0;
 	}
 }
@@ -354,7 +353,7 @@ void Client::readyRead()
 				return;
 			switch (p->header.id) {
 			case MessageHeader::ReplyResult:
-				if (!call.out->ParseFromArray(p->payload.data(), p->payload.size()))
+				if (!call.out_msg->ParseFromArray(p->payload.data(), p->payload.size()))
 					finishCall(CommandResult::LinkFailure);
 				else
 					finishCall(CommandResult::Ok);
@@ -469,7 +468,14 @@ std::shared_ptr<Client::Binding> Client::getBinding(const dfproto::CoreBindReque
 	auto it = p->bindings.lower_bound(request);
 	if (it == p->bindings.end() || !is_same_bind_request(it->first, request)) {
 		it = p->bindings.emplace_hint(it, request, std::make_shared<Binding>());
-		it->second->result = call(0, it->first, it->second->reply).first;
+		it->second->result = call(0, it->first, std::make_shared<dfproto::CoreBindReply>())
+			.first.then([&binding = it->second](CallReply<> res) {
+				if (res) {
+					const auto &reply = static_cast<const dfproto::CoreBindReply &>(*res);
+					binding->id = reply.assigned_id();
+				}
+				return res.cr;
+			});
 	}
 	return it->second;
 }

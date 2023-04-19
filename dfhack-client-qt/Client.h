@@ -56,6 +56,59 @@ enum class Color
 using TextNotification = std::pair<DFHack::Color, QString>;
 
 /**
+ * Reply to a function call
+ *
+ * It contains both the command result code \ref cr and (optionally) the reply
+ * message \ref msg.
+ *
+ * \ref msg will null for failed calls.
+ *
+ * Default message type is the base MessageLite type. CallReply<> can be casted
+ * to derived message types CallReply<MyFunctionReply>.
+ */
+template <typename T = google::protobuf::MessageLite>
+struct CallReply {
+	CommandResult cr;
+	std::shared_ptr<T> msg;
+
+	CallReply(CommandResult cr, std::shared_ptr<T> &&msg) noexcept
+		: cr(cr)
+		, msg(std::move(msg))
+	{
+	}
+
+	CallReply(CommandResult cr) noexcept
+		: cr(cr)
+		, msg(nullptr)
+	{
+	}
+
+	CallReply(std::shared_ptr<T> &&msg) noexcept
+		: cr(CommandResult::Ok)
+		, msg(std::move(msg))
+	{
+	}
+
+	/**
+	 * Checks if the call succeeded
+	 */
+	operator bool() const noexcept { return cr == CommandResult::Ok; }
+	/**
+	 * Access the reply message
+	 */
+	const T &operator*() const noexcept { return *msg; }
+	/**
+	 * Access the reply message members
+	 */
+	const T *operator->() const noexcept { return msg.get(); }
+
+	template <typename U> requires std::same_as<T, google::protobuf::MessageLite>
+	CallReply<U> cast() const & noexcept { return {cr, static_pointer_cast<U>(msg)}; }
+	template <typename U> requires std::same_as<T, google::protobuf::MessageLite>
+	CallReply<U> cast() && noexcept { return {cr, static_pointer_cast<U>(std::move(msg))}; }
+};
+
+/**
  * DFHack remote protocol client
  */
 class DFHACK_CLIENT_QT_EXPORT Client: public QObject
@@ -76,6 +129,7 @@ public:
 	 * \returns a future indicating connection success.
 	 */
 	QFuture<bool> connect(const QString &host, quint16 port);
+
 	/**
 	 * Disconnect from DFHack server
 	 *
@@ -92,23 +146,23 @@ public:
 	 *
 	 * Call function \p id with parameters \p in and stores results in \p out.
 	 *
-	 * \returns a pair of future command result and future text notifications,
-	 * if the command result is CommandResult::Ok, \p out is ready.
+	 * \returns a pair of future call reply and future text notifications.
+	 * If the call succeeds, \ref CallReply<>::msg will contain \ref out.
 	 */
-	std::pair<QFuture<CommandResult>, QFuture<TextNotification>> call(
+	std::pair<QFuture<CallReply<>>, QFuture<TextNotification>> call(
 			int16_t id,
 			const google::protobuf::MessageLite &in,
-			google::protobuf::MessageLite &out);
+			std::shared_ptr<google::protobuf::MessageLite> out);
 
 	struct Binding
 	{
 		/**
-		 * Reply to the bind request. Content is valid only if
-		 * \ref result is finished and not an error.
+		 * Call id. Content is valid only if \ref result is finished
+		 * and not an error.
 		 *
 		 * Use assigned_id to get the call id.
 		 */
-		dfproto::CoreBindReply reply;
+		int id;
 		/**
 		 * Result for the bind request.
 		 */
@@ -148,10 +202,10 @@ private:
 	struct Private;
 	std::unique_ptr<Private> p;
 
-	std::pair<QFuture<CommandResult>, QFuture<TextNotification>> enqueueCall(
+	std::pair<QFuture<CallReply<>>, QFuture<TextNotification>> enqueueCall(
 			int id,
 			const google::protobuf::MessageLite *in,
-			google::protobuf::MessageLite *out);
+			std::shared_ptr<google::protobuf::MessageLite> &&out);
 
 	void sendNextCall();
 
