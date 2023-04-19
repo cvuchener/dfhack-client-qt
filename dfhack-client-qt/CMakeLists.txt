@@ -19,6 +19,7 @@ qt6_wrap_cpp(MOC_SOURCES
 )
 
 protobuf_generate_cpp(PROTO_SOURCES PROTO_HEADERS
+	EXPORT_MACRO DFHACK_CLIENT_QT_EXPORT
 	Basic.proto
 	BasicApi.proto
 	CoreProtocol.proto
@@ -33,6 +34,11 @@ target_include_directories(dfhack-client-qt PUBLIC
 	$<INSTALL_INTERFACE:include>
 )
 target_compile_definitions(dfhack-client-qt PRIVATE DFHACK_CLIENT_QT_LIBRARY)
+if (MSVC)
+	target_compile_options(dfhack-client-qt PRIVATE "-FI dfhack-client-qt/globals.h")
+else()
+	target_compile_options(dfhack-client-qt PRIVATE -include dfhack-client-qt/globals.h)
+endif()
 target_link_libraries(dfhack-client-qt protobuf::libprotobuf Qt::Network)
 set_target_properties(dfhack-client-qt PROPERTIES
 	PUBLIC_HEADER "${PUBLIC_HEADERS}"

@@ -134,7 +134,7 @@ QFuture<bool> bindAll(Fs &&...functions)
 	QList<QFuture<bool>> futures;
 	(futures.append(functions.bind()), ...);
 	return QtFuture::whenAll(futures.begin(), futures.end()).then([](const QList<QFuture<bool>> &r) {
-		return std::ranges::all_of(r, &QFuture<bool>::result);
+		return std::ranges::all_of(r, &QFuture<bool>::result<bool>);
 	});
 }
 
