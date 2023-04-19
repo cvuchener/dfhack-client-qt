@@ -46,6 +46,7 @@ private slots:
 
 	void dfhackConnectionChanged(bool connected);
 	void dfhackSocketError(QAbstractSocket::SocketError error, const QString &error_string);
+	void dfhackTextStarted();
 	void dfhackTextMessage(int begin, int end);
 	void dfhackCommandStarted();
 	void dfhackCommandFinished();
@@ -58,7 +59,7 @@ private:
 	DFHack::Core::Suspend suspend;
 	DFHack::Core::Resume resume;
 
-	QFutureWatcher<DFHack::CommandResult> command_watcher;
+	QFutureWatcher<DFHack::CallReply<dfproto::EmptyMessage>> command_watcher;
 	QFutureWatcher<std::pair<DFHack::Color, QString>> notification_watcher;
 
 	QTextBlockFormat command_format, notification_format, result_format;

@@ -43,28 +43,29 @@ int main(int argc, char *argv[])
 	DFHack::Core::Suspend suspend(&client);
 	DFHack::Core::Resume resume(&client);
 
-	run_command.in.set_command("ls");
-	run_command.in.clear_arguments();
 	watcher.setFuture(client.connect("localhost", DFHack::Client::DefaultPort).then([&](bool success) {
 		if (!success)
 			throw std::runtime_error("Failed to connect");
-		return run_command.call().first;
-	}).unwrap().then([&](DFHack::CommandResult cr) {
-		qInfo() << "command result:" << static_cast<int>(cr);
+		auto args = run_command.args();
+		args.set_command("ls");
+		args.clear_arguments();
+		return run_command.call(args).first;
+	}).unwrap().then([&](DFHack::CallReply<dfproto::EmptyMessage> reply) {
+		qInfo() << "command result:" << static_cast<int>(reply.cr);
 		return suspend.bind();
 	}).unwrap().then([&](bool success) {
 		if (!success)
 			throw std::runtime_error("Failed to bind suspend");
 		return suspend.call().first;
-	}).unwrap().then([&](DFHack::CommandResult cr) {
-		qInfo() << "suspend: " << static_cast<int>(cr);
+	}).unwrap().then([&](DFHack::CallReply<dfproto::IntMessage> reply) {
+		qInfo() << "suspend: " << static_cast<int>(reply.cr);
 		return resume.bind();
 	}).unwrap().then([&](bool success) {
 		if (!success)
 			throw std::runtime_error("Failed to bind resume");
 		return resume.call().first;
-	}).unwrap().then([&](DFHack::CommandResult cr) {
-		qInfo() << "resume: " << static_cast<int>(cr);
+	}).unwrap().then([&](DFHack::CallReply<dfproto::IntMessage> reply) {
+		qInfo() << "resume: " << static_cast<int>(reply.cr);
 		return client.disconnect();
 	}).unwrap().onFailed([](std::exception &e) {
 		qCritical() << e.what();

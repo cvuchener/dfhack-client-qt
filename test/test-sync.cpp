@@ -64,13 +64,14 @@ int main(int argc, char *argv[])
 
 	{
 		DFHack::Core::RunCommand run_command(&client);
-		run_command.in.set_command("ls");
-		run_command.in.clear_arguments();
-		auto [cr, notifications] = run_command.call();
-		cr.waitForFinished();
-		for (const auto &n: notifications)
+		auto in = run_command.args();
+		in.set_command("ls");
+		in.clear_arguments();
+		auto [reply, notifications] = run_command.call(in);
+		reply.waitForFinished();
+		for (const auto &n: notifications.results())
 			qInfo() << n.second;
-		qInfo() << "command result:" << static_cast<int>(cr.result());
+		qInfo() << "command result:" << static_cast<int>(reply.result().cr);
 	}
 
 	{
@@ -79,19 +80,19 @@ int main(int argc, char *argv[])
 			qCritical() << "Failed to bind suspend";
 			return -1;
 		}
-		auto [cr, notifications] = suspend.call();
-		cr.waitForFinished();
-		qInfo() << "suspend: " << static_cast<int>(cr.result());
+		auto [reply, notifications] = suspend.call();
+		reply.waitForFinished();
+		qInfo() << "suspend:" << static_cast<int>(reply.result().cr);
 	}
+
 	{
 		DFHack::Core::Resume resume(&client);
 		if (!sync(resume.bind())) {
 			qCritical() << "Failed to bind resume";
 			return -1;
 		}
-		auto [cr, notifications] = resume.call();
-		cr.waitForFinished();
-		qInfo() << "resume: " << static_cast<int>(cr.result());
+		auto [reply, notifications] = resume.call();
+		qInfo() << "resume:" << static_cast<int>(reply.result().cr);
 	}
 
 	client.disconnect().waitForFinished();

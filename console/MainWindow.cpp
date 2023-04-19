@@ -50,6 +50,8 @@ MainWindow::MainWindow(QWidget *parent)
 		this, &MainWindow::dfhackConnectionChanged);
 	connect(&client, &DFHack::Client::socketError,
 		this, &MainWindow::dfhackSocketError);
+	connect(&notification_watcher, &decltype(notification_watcher)::started,
+		this, &MainWindow::dfhackTextStarted);
 	connect(&notification_watcher, &decltype(notification_watcher)::resultsReadyAt,
 		this, &MainWindow::dfhackTextMessage);
 	connect(&command_watcher, &decltype(command_watcher)::started,
@@ -78,15 +80,16 @@ void MainWindow::on_disconnect_action_triggered()
 	client.disconnect();
 }
 
-static bool parse_command(const std::string &line, dfproto::CoreRunCommandRequest &request)
+static std::optional<dfproto::CoreRunCommandRequest> parse_command(const std::string &line)
 {
 	std::stringstream ss(line);
 	std::string str;
 	ss >> std::quoted(str);
 	if (!ss || str.empty())
-		return false;
+		return std::nullopt;
 	qDebug() << "command" << QString::fromStdString(str);
 
+	dfproto::CoreRunCommandRequest request;
 	request.clear_arguments();
 	if (str[0] == ':') {
 		// treat all arguments as a single string
@@ -96,7 +99,6 @@ static bool parse_command(const std::string &line, dfproto::CoreRunCommandReques
 			qDebug() << "arg" << QString::fromStdString(str);
 			request.add_arguments(str);
 		}
-		return true;
 	}
 	else {
 		// parse quoted arguments
@@ -105,8 +107,8 @@ static bool parse_command(const std::string &line, dfproto::CoreRunCommandReques
 			qDebug() << "arg" << QString::fromStdString(str);
 			request.add_arguments(str);
 		}
-		return true;
 	}
+	return request;
 }
 
 void MainWindow::on_send_command_action_triggered()
@@ -119,8 +121,8 @@ void MainWindow::on_send_command_action_triggered()
 
 	status_bar->clearMessage();
 
-	if (parse_command(command_line->text().toStdString(), run_command.in)) {
-		auto [res, text] = run_command.call();
+	if (auto args = parse_command(command_line->text().toStdString())) {
+		auto [res, text] = run_command.call(*args);
 		command_watcher.setFuture(res);
 		notification_watcher.setFuture(text);
 	}
@@ -152,6 +154,7 @@ void MainWindow::on_resume_action_triggered()
 			if (success)
 				on_resume_action_triggered();
 		});
+		return;
 	}
 	resume.call();
 }
@@ -164,7 +167,7 @@ void MainWindow::dfhackConnectionChanged(bool connected)
 	status_bar->clearMessage();
 }
 
-void MainWindow::dfhackSocketError(QAbstractSocket::SocketError error, const QString &error_string)
+void MainWindow::dfhackSocketError(QAbstractSocket::SocketError, const QString &error_string)
 {
 	connection_status->setText(QString());
 	connect_action->setEnabled(true);
@@ -213,6 +216,13 @@ static QColor get_color_code(const QPalette &palette, DFHack::Color color)
 	}
 }
 
+void MainWindow::dfhackTextStarted()
+{
+	QTextCursor cursor(console_output->document());
+	cursor.movePosition(QTextCursor::End);
+	cursor.insertBlock(notification_format, char_format);
+}
+
 void MainWindow::dfhackTextMessage(int begin, int end)
 {
 	for (int i = begin; i < end; ++i) {
@@ -228,16 +238,18 @@ void MainWindow::dfhackTextMessage(int begin, int end)
 
 void MainWindow::dfhackCommandStarted()
 {
-	QTextCursor cursor(console_output->document());
-	cursor.movePosition(QTextCursor::End);
-	cursor.insertBlock(notification_format, char_format);
 	status_bar->showMessage("Executing command");
 }
 
 void MainWindow::dfhackCommandFinished()
 {
-	auto cr = command_watcher.future().result();
-	status_bar->showMessage(QString("result: %1")
-		.arg(static_cast<int>(cr))
-	);
+	try {
+		auto res = command_watcher.future().result();
+		status_bar->showMessage("success");
+	}
+	catch (DFHack::CommandResult cr) {
+		status_bar->showMessage(QString("failure: %1")
+			.arg(static_cast<int>(cr))
+		);
+	}
 }
