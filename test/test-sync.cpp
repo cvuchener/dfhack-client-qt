@@ -76,10 +76,6 @@ int main(int argc, char *argv[])
 
 	{
 		DFHack::Core::Suspend suspend(&client);
-		if (!sync(suspend.bind())) {
-			qCritical() << "Failed to bind suspend";
-			return -1;
-		}
 		auto [reply, notifications] = suspend.call();
 		reply.waitForFinished();
 		qInfo() << "suspend:" << static_cast<int>(reply.result().cr);
@@ -87,10 +83,6 @@ int main(int argc, char *argv[])
 
 	{
 		DFHack::Core::Resume resume(&client);
-		if (!sync(resume.bind())) {
-			qCritical() << "Failed to bind resume";
-			return -1;
-		}
 		auto [reply, notifications] = resume.call();
 		qInfo() << "resume:" << static_cast<int>(reply.result().cr);
 	}

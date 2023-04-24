@@ -141,19 +141,6 @@ public:
 	 */
 	QFuture<void> disconnect();
 
-	/**
-	 * Low-level remote function call
-	 *
-	 * Call function \p id with parameters \p in and stores results in \p out.
-	 *
-	 * \returns a pair of future call reply and future text notifications.
-	 * If the call succeeds, \ref CallReply<>::msg will contain \ref out.
-	 */
-	std::pair<QFuture<CallReply<>>, QFuture<TextNotification>> call(
-			int16_t id,
-			const google::protobuf::MessageLite &in,
-			std::shared_ptr<google::protobuf::MessageLite> out);
-
 	struct Binding
 	{
 		/**
@@ -184,6 +171,34 @@ public:
 	 * connection is lost.
 	 */
 	std::shared_ptr<Binding> getBinding(const dfproto::CoreBindRequest &);
+
+	/**
+	 * Low-level remote function call using known id
+	 *
+	 * Call function \p id with parameters \p in and stores results in \p out.
+	 *
+	 * \returns a pair of future call reply and future text notifications.
+	 * If the call succeeds, \ref CallReply<>::msg will contain \p out.
+	 */
+	std::pair<QFuture<CallReply<>>, QFuture<TextNotification>> call(
+			int16_t id,
+			const google::protobuf::MessageLite &in,
+			std::shared_ptr<google::protobuf::MessageLite> out);
+	/**
+	 * Low-level remote function call using binding
+	 *
+	 * Call function corresponding to \p binding with parameters \p in and
+	 * stores results in \p out. \p binding must be a valid or pending
+	 * binding obtain from \ref getBinding during the current connection.
+	 *
+	 * \returns a pair of future call reply and future text notifications.
+	 * If the call succeeds, \ref CallReply<>::msg will contain \p out.
+	 */
+	std::pair<QFuture<CallReply<>>, QFuture<TextNotification>> call(
+			std::shared_ptr<Binding> binding,
+			const google::protobuf::MessageLite &in,
+			std::shared_ptr<google::protobuf::MessageLite> out);
+
 signals:
 	/**
 	 * Signal emitted when the client is connected or disconnected.
@@ -203,8 +218,8 @@ private:
 	std::unique_ptr<Private> p;
 
 	std::pair<QFuture<CallReply<>>, QFuture<TextNotification>> enqueueCall(
-			int id,
-			const google::protobuf::MessageLite *in,
+			std::variant<int, std::shared_ptr<Binding>> id,
+			std::string &&in,
 			std::shared_ptr<google::protobuf::MessageLite> &&out);
 
 	void sendNextCall();

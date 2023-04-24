@@ -133,29 +133,11 @@ void MainWindow::on_send_command_action_triggered()
 
 void MainWindow::on_suspend_action_triggered()
 {
-	if (!suspend) {
-		suspend.bind().then([this](bool success) {
-			status_bar->showMessage(tr("Suspend bound: %1").arg(success));
-			qDebug() << "binding suspend" << success;
-			if (success)
-				on_suspend_action_triggered();
-		});
-		return;
-	}
 	suspend.call();
 }
 
 void MainWindow::on_resume_action_triggered()
 {
-	if (!resume) {
-		resume.bind().then([this](bool success) {
-			status_bar->showMessage(tr("Resume bound: %1").arg(success));
-			qDebug() << "binding resume" << success;
-			if (success)
-				on_resume_action_triggered();
-		});
-		return;
-	}
 	resume.call();
 }
 

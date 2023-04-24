@@ -27,6 +27,9 @@
 
 #include <QtDebug>
 
+template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
+template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+
 using namespace DFHack;
 
 struct HandshakePacket
@@ -63,16 +66,16 @@ enum class State {
 };
 
 struct call_t {
-	int id;
+	std::variant<int, std::shared_ptr<Client::Binding>> id;
 	std::string in_msg;
 	std::shared_ptr<google::protobuf::MessageLite> out_msg;
 	QPromise<CallReply<>> result;
 	QPromise<TextNotification> notifications;
 
-	call_t(int id,
+	call_t(std::variant<int, std::shared_ptr<Client::Binding>> &&id,
 	       std::string &&in,
 	       std::shared_ptr<google::protobuf::MessageLite> &&out)
-		: id(id)
+		: id(std::move(id))
 		, in_msg(std::move(in))
 		, out_msg(std::move(out))
 	{
@@ -185,7 +188,7 @@ Client::~Client()
 	if (p->state != State::Disconnected) {
 		// Disconnect and wait
 		moveToThread(QThread::currentThread());
-		auto [result, notifications] = enqueueCall(MessageHeader::RequestQuit, nullptr, nullptr);
+		auto [result, notifications] = enqueueCall(MessageHeader::RequestQuit, {}, nullptr);
 		QFutureWatcher<CallReply<>> watcher;
 		QEventLoop loop;
 		QObject::connect(&watcher, &QFutureWatcher<CommandResult>::finished,
@@ -230,7 +233,7 @@ QFuture<bool> Client::connect(const QString &host, quint16 port)
 
 QFuture<void> Client::disconnect()
 {
-	return enqueueCall(MessageHeader::RequestQuit, nullptr, nullptr).first
+	return enqueueCall(MessageHeader::RequestQuit, {}, nullptr).first
 		.then([](auto){});
 }
 
@@ -238,15 +241,22 @@ std::pair<QFuture<CallReply<>>, QFuture<TextNotification>> Client::call(int16_t 
 					const google::protobuf::MessageLite &in,
 					std::shared_ptr<google::protobuf::MessageLite> out)
 {
-	return enqueueCall(id, &in, std::move(out));
+	return enqueueCall(id, in.SerializeAsString(), std::move(out));
+}
+
+std::pair<QFuture<CallReply<>>, QFuture<TextNotification>> Client::call(std::shared_ptr<Binding> binding,
+					const google::protobuf::MessageLite &in,
+					std::shared_ptr<google::protobuf::MessageLite> out)
+{
+	return enqueueCall(std::move(binding), in.SerializeAsString(), std::move(out));
 }
 
 std::pair<QFuture<CallReply<>>, QFuture<TextNotification>> Client::enqueueCall(
-		int id,
-		const google::protobuf::MessageLite *in,
+		std::variant<int, std::shared_ptr<Binding>> id,
+		std::string &&in,
 		std::shared_ptr<google::protobuf::MessageLite> &&out)
 {
-	call_t call(id, in ? in->SerializeAsString() : std::string{}, std::move(out));
+	call_t call(std::move(id), std::move(in), std::move(out));
 	auto result = call.result.future();
 	auto notifications = call.notifications.future();
 	QMetaObject::invokeMethod(this, [this, call = std::move(call)]() mutable {
@@ -258,7 +268,15 @@ std::pair<QFuture<CallReply<>>, QFuture<TextNotification>> Client::enqueueCall(
 				return;
 			}
 #ifdef DFHACK_CLIENT_QT_DEBUG
-			qDebug() << "queue RPC call" << call.id;
+			visit(overloaded{
+				[](int id) {
+					qDebug() << "queue RPC call with id" << id;
+				},
+				[](const std::shared_ptr<Binding> &binding) {
+					qDebug() << "queue RPC call with binding";
+					qDebug() << "finished:" << binding->result.isFinished();
+					qDebug() << "id:" << binding->id;
+				}}, call.id);
 #endif
 			p->call_queue.push(std::move(call));
 			if (p->state == State::Ready)
@@ -274,30 +292,51 @@ void Client::sendNextCall()
 	assert(!p->call_queue.empty());
 
 	auto &call = p->call_queue.front();
-#ifdef DFHACK_CLIENT_QT_DEBUG
-	qDebug() << "send next call" << call.id;
-#endif
 	call.result.start();
 	call.notifications.start();
 
 	std::string msg;
 	MessageHeader hdr;
-	if (call.id == MessageHeader::RequestQuit) {
-		hdr.id = MessageHeader::RequestQuit;
-		hdr.size = 0;
-		p->state = State::Disconnecting;
-		p->write(&hdr);
-		call.finish(CommandResult::Ok);
-		p->call_queue.pop();
-		p->socket.disconnectFromHost();
+	try {
+		int id = visit(overloaded{
+			[](int id) { return id; },
+			[](const std::shared_ptr<Binding> &binding) {
+				if (!binding->result.isValid())
+					throw CommandResult::LinkFailure;
+				auto cr = binding->result.result();
+				if (cr != CommandResult::Ok)
+					throw cr;
+				return binding->id;
+			}
+		}, call.id);
+#ifdef DFHACK_CLIENT_QT_DEBUG
+		qDebug() << "send next call" << id;
+#endif
+		if (id == MessageHeader::RequestQuit) {
+			hdr.id = MessageHeader::RequestQuit;
+			hdr.size = 0;
+			p->state = State::Disconnecting;
+			p->write(&hdr);
+			call.finish(CommandResult::Ok);
+			p->call_queue.pop();
+			p->socket.disconnectFromHost();
+		}
+		else {
+			hdr.id = id;
+			hdr.size = static_cast<int32_t>(call.in_msg.size());
+			p->state = State::WaitingForMessageHeader;
+			p->write(&hdr);
+			p->write(call.in_msg.data(), call.in_msg.size());
+			p->bytes_read = 0;
+		}
 	}
-	else {
-		hdr.id = call.id;
-		hdr.size = static_cast<int32_t>(call.in_msg.size());
-		p->state = State::WaitingForMessageHeader;
-		p->write(&hdr);
-		p->write(call.in_msg.data(), call.in_msg.size());
-		p->bytes_read = 0;
+	catch (CommandResult cr) {
+#ifdef DFHACK_CLIENT_QT_DEBUG
+		qDebug() << "failed to send next call" << QString::fromLocal8Bit(std::error_code(cr).message());
+#endif
+		finishCall(cr);
+		if (!p->call_queue.empty())
+			sendNextCall();
 	}
 }
 
@@ -469,7 +508,7 @@ std::shared_ptr<Client::Binding> Client::getBinding(const dfproto::CoreBindReque
 	if (it == p->bindings.end() || !is_same_bind_request(it->first, request)) {
 		it = p->bindings.emplace_hint(it, request, std::make_shared<Binding>());
 		it->second->result = call(0, it->first, std::make_shared<dfproto::CoreBindReply>())
-			.first.then([&binding = it->second](CallReply<> res) {
+			.first.then([binding = it->second](CallReply<> res) {
 				if (res) {
 					const auto &reply = static_cast<const dfproto::CoreBindReply &>(*res);
 					binding->id = reply.assigned_id();

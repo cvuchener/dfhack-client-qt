@@ -30,13 +30,11 @@ namespace DFHack
  * In and Out are protocol buffers message types for parameters and results.
  *
  * Only set Id for functions with fixed ids, regular functions should leave
- * the default value and call bind before any call.
+ * the default value.
  */
 template<static_string Module, static_string Name, typename In, typename Out, int Id = -1>
 class Function
 {
-	Client *client;
-	std::shared_ptr<Client::Binding> binding;
 public:
 	static inline constexpr std::string_view module = Module;
 	static inline constexpr std::string_view name = Name;
@@ -70,25 +68,20 @@ public:
 	/**
 	 * Bind the function.
 	 *
-	 * Function that do not have a fixed id must be bound before any call.
-	 *
 	 * \returns a future boolean telling if the bind operation was successful.
 	 */
 	QFuture<bool> bind() requires (id == -1)
 	{
-		dfproto::CoreBindRequest request;
-		request.set_method(Name.c_str());
-		request.set_input_msg(InputMessage().GetTypeName());
-		request.set_output_msg(OutputMessage().GetTypeName());
-		request.set_plugin(Module.c_str());
-		binding = client->getBinding(request);
-		return binding->result.then([](CommandResult cr){return cr == CommandResult::Ok;});
+		return getBinding()->result.then([](CommandResult cr) {
+			return cr == CommandResult::Ok;
+		});
 	}
 
 	/**
 	 * Call the function.
 	 *
-	 * \ref in parameters must be initialized before calling this function.
+	 * If the function is not already bound, it will be bound before the
+	 * actual call is sent.
 	 *
 	 * When the future are started \ref in is reusable, after they are
 	 * finished with a CommandResult::Ok value, \ref out is set to
@@ -103,18 +96,33 @@ public:
 	std::pair<QFuture<CallReply<OutputMessage>>, QFuture<TextNotification>>
 	call(const InputMessage &in = {})
 	{
-		if (this->id == -1 && !isBound()) {
-			return {
-				QtFuture::makeReadyFuture(CallReply<OutputMessage>{CommandResult::LinkFailure}),
-				QtFuture::makeReadyFuture<TextNotification>(QList<TextNotification>{})
-			};
+		std::pair<QFuture<CallReply<>>, QFuture<TextNotification>> res;
+		if constexpr (id == -1) {
+			res = client->call(getBinding(), in, std::make_shared<Out>());
 		}
-		auto res = client->call(id == -1 ? binding->id : id, in, std::make_shared<Out>());
+		else
+			res = client->call(id, in, std::make_shared<Out>());
 		return {
 			res.first.then([](CallReply<> r) { return std::move(r).cast<OutputMessage>(); }),
 			res.second
 		};
 	}
+
+private:
+	const std::shared_ptr<Client::Binding> &getBinding()
+	{
+		if (binding && !binding->result.isCanceled())
+			return binding;
+		dfproto::CoreBindRequest request;
+		request.set_method(Name.c_str());
+		request.set_input_msg(InputMessage().GetTypeName());
+		request.set_output_msg(OutputMessage().GetTypeName());
+		request.set_plugin(Module.c_str());
+		return binding = client->getBinding(request);
+	}
+
+	Client *client;
+	std::shared_ptr<Client::Binding> binding;
 };
 
 template <typename T>

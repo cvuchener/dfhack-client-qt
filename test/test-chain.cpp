@@ -52,17 +52,9 @@ int main(int argc, char *argv[])
 		return run_command.call(args).first;
 	}).unwrap().then([&](DFHack::CallReply<dfproto::EmptyMessage> reply) {
 		qInfo() << "command result:" << static_cast<int>(reply.cr);
-		return suspend.bind();
-	}).unwrap().then([&](bool success) {
-		if (!success)
-			throw std::runtime_error("Failed to bind suspend");
 		return suspend.call().first;
 	}).unwrap().then([&](DFHack::CallReply<dfproto::IntMessage> reply) {
 		qInfo() << "suspend: " << static_cast<int>(reply.cr);
-		return resume.bind();
-	}).unwrap().then([&](bool success) {
-		if (!success)
-			throw std::runtime_error("Failed to bind resume");
 		return resume.call().first;
 	}).unwrap().then([&](DFHack::CallReply<dfproto::IntMessage> reply) {
 		qInfo() << "resume: " << static_cast<int>(reply.cr);
