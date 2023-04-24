@@ -49,13 +49,13 @@ int main(int argc, char *argv[])
 		auto args = run_command.args();
 		args.set_command("ls");
 		args.clear_arguments();
-		return run_command.call(args).first;
+		return run_command(args).first;
 	}).unwrap().then([&](DFHack::CallReply<dfproto::EmptyMessage> reply) {
 		qInfo() << "command result:" << static_cast<int>(reply.cr);
-		return suspend.call().first;
+		return suspend().first;
 	}).unwrap().then([&](DFHack::CallReply<dfproto::IntMessage> reply) {
 		qInfo() << "suspend: " << static_cast<int>(reply.cr);
-		return resume.call().first;
+		return resume().first;
 	}).unwrap().then([&](DFHack::CallReply<dfproto::IntMessage> reply) {
 		qInfo() << "resume: " << static_cast<int>(reply.cr);
 		return client.disconnect();

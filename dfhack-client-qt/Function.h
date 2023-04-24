@@ -94,12 +94,11 @@ public:
 	 * if the command result is CommandResult::Ok, \ref out is ready.
 	 */
 	std::pair<QFuture<CallReply<OutputMessage>>, QFuture<TextNotification>>
-	call(const InputMessage &in = {})
+	operator()(const InputMessage &in = {})
 	{
 		std::pair<QFuture<CallReply<>>, QFuture<TextNotification>> res;
-		if constexpr (id == -1) {
+		if constexpr (id == -1)
 			res = client->call(getBinding(), in, std::make_shared<Out>());
-		}
 		else
 			res = client->call(id, in, std::make_shared<Out>());
 		return {

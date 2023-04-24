@@ -67,7 +67,7 @@ int main(int argc, char *argv[])
 		auto in = run_command.args();
 		in.set_command("ls");
 		in.clear_arguments();
-		auto [reply, notifications] = run_command.call(in);
+		auto [reply, notifications] = run_command(in);
 		reply.waitForFinished();
 		for (const auto &n: notifications.results())
 			qInfo() << n.second;
@@ -76,14 +76,14 @@ int main(int argc, char *argv[])
 
 	{
 		DFHack::Core::Suspend suspend(&client);
-		auto [reply, notifications] = suspend.call();
+		auto [reply, notifications] = suspend();
 		reply.waitForFinished();
 		qInfo() << "suspend:" << static_cast<int>(reply.result().cr);
 	}
 
 	{
 		DFHack::Core::Resume resume(&client);
-		auto [reply, notifications] = resume.call();
+		auto [reply, notifications] = resume();
 		qInfo() << "resume:" << static_cast<int>(reply.result().cr);
 	}
 

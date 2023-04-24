@@ -122,7 +122,7 @@ void MainWindow::on_send_command_action_triggered()
 	status_bar->clearMessage();
 
 	if (auto args = parse_command(command_line->text().toStdString())) {
-		auto [res, text] = run_command.call(*args);
+		auto [res, text] = run_command(*args);
 		command_watcher.setFuture(res);
 		notification_watcher.setFuture(text);
 	}
@@ -133,12 +133,12 @@ void MainWindow::on_send_command_action_triggered()
 
 void MainWindow::on_suspend_action_triggered()
 {
-	suspend.call();
+	suspend();
 }
 
 void MainWindow::on_resume_action_triggered()
 {
-	resume.call();
+	resume();
 }
 
 void MainWindow::dfhackConnectionChanged(bool connected)
