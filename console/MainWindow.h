@@ -55,9 +55,7 @@ private:
 	QLabel *connection_status;
 
 	DFHack::Client client;
-	DFHack::Core::RunCommand run_command;
-	DFHack::Core::Suspend suspend;
-	DFHack::Core::Resume resume;
+	DFHack::Core core;
 
 	QFutureWatcher<DFHack::CallReply<dfproto::EmptyMessage>> command_watcher;
 	QFutureWatcher<std::pair<DFHack::Color, QString>> notification_watcher;

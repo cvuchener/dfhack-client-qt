@@ -24,15 +24,15 @@
 namespace DFHack
 {
 
-namespace Core
+struct Core
 {
-	using BindMethod = Function<"", "BindMethod", dfproto::CoreBindRequest, dfproto::CoreBindReply, 0>;
-	using RunCommand = Function<"", "RunCommand", dfproto::CoreRunCommandRequest, dfproto::EmptyMessage, 1>;
+	const Function<dfproto::CoreBindRequest, dfproto::CoreBindReply, 0> bindMethod = {"", "BindMethod"};
+	const Function<dfproto::CoreRunCommandRequest, dfproto::EmptyMessage, 1> runCommand = {"", "RunCommand"};
 
-	using Suspend = Function<"", "CoreSuspend", dfproto::EmptyMessage, dfproto::IntMessage>;
-	using Resume = Function<"", "CoreResume", dfproto::EmptyMessage, dfproto::IntMessage>;
+	const Function<dfproto::EmptyMessage, dfproto::IntMessage> suspend = {"", "CoreSuspend"};
+	const Function<dfproto::EmptyMessage, dfproto::IntMessage> resume = {"", "CoreResume"};
 
-	using RunLua = Function<"", "RunLua", dfproto::CoreRunLuaRequest, dfproto::StringListMessage>;
+	const Function<dfproto::CoreRunLuaRequest, dfproto::StringListMessage> runLua = {"", "RunLua"};
 };
 
 } // namespace DFHack

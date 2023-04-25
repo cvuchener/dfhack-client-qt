@@ -28,7 +28,6 @@
 #include <dfhack-client-qt/globals.h>
 #include <dfhack-client-qt/CommandResult.h>
 #include <dfhack-client-qt/CoreProtocol.pb.h>
-#include <dfhack-client-qt/static_string.h>
 
 namespace DFHack
 {

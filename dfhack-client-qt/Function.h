@@ -32,19 +32,25 @@ namespace DFHack
  * Only set Id for functions with fixed ids, regular functions should leave
  * the default value.
  */
-template<static_string Module, static_string Name, typename In, typename Out, int Id = -1>
+template<typename In, typename Out, int Id = -1>
 class Function
 {
+	const std::string module;
+	const std::string name;
+	dfproto::CoreBindRequest bind_request;
+	static constexpr int id = Id;
 public:
-	static inline constexpr std::string_view module = Module;
-	static inline constexpr std::string_view name = Name;
 	using InputMessage = In;
 	using OutputMessage = Out;
-	static inline constexpr int id = Id;
 
-	Function(Client *client)
-		: client(client)
+	Function(std::string_view module, std::string_view name)
+		: module(module)
+		, name(name)
 	{
+		bind_request.set_method(this->name);
+		bind_request.set_input_msg(InputMessage().GetTypeName());
+		bind_request.set_output_msg(OutputMessage().GetTypeName());
+		bind_request.set_plugin(this->module);
 	}
 
 	/**
@@ -53,26 +59,13 @@ public:
 	InputMessage args() const { return {}; }
 
 	/**
-	 * true if the function is ready to be called (bound or fixed id).
-	 */
-	operator bool() const
-	{
-		return id != -1 || isBound();
-	}
-
-	bool isBound() const
-	{
-		return binding && binding->ready();
-	}
-
-	/**
 	 * Bind the function.
 	 *
 	 * \returns a future boolean telling if the bind operation was successful.
 	 */
-	QFuture<bool> bind() requires (id == -1)
+	QFuture<bool> bind(Client &client) const requires (id == -1)
 	{
-		return getBinding()->result.then([](CommandResult cr) {
+		return getBinding(client)->result.then([](CommandResult cr) {
 			return cr == CommandResult::Ok;
 		});
 	}
@@ -94,13 +87,13 @@ public:
 	 * if the command result is CommandResult::Ok, \ref out is ready.
 	 */
 	std::pair<QFuture<CallReply<OutputMessage>>, QFuture<TextNotification>>
-	operator()(const InputMessage &in = {})
+	operator()(Client &client, const InputMessage &in = {}) const
 	{
 		std::pair<QFuture<CallReply<>>, QFuture<TextNotification>> res;
 		if constexpr (id == -1)
-			res = client->call(getBinding(), in, std::make_shared<Out>());
+			res = client.call(getBinding(client), in, std::make_shared<Out>());
 		else
-			res = client->call(id, in, std::make_shared<Out>());
+			res = client.call(id, in, std::make_shared<Out>());
 		return {
 			res.first.then([](CallReply<> r) { return std::move(r).cast<OutputMessage>(); }),
 			res.second
@@ -108,20 +101,10 @@ public:
 	}
 
 private:
-	const std::shared_ptr<Client::Binding> &getBinding()
+	std::shared_ptr<Client::Binding> getBinding(Client &client) const
 	{
-		if (binding && !binding->result.isCanceled())
-			return binding;
-		dfproto::CoreBindRequest request;
-		request.set_method(Name.c_str());
-		request.set_input_msg(InputMessage().GetTypeName());
-		request.set_output_msg(OutputMessage().GetTypeName());
-		request.set_plugin(Module.c_str());
-		return binding = client->getBinding(request);
+		return client.getBinding(bind_request);
 	}
-
-	Client *client;
-	std::shared_ptr<Client::Binding> binding;
 };
 
 template <typename T>

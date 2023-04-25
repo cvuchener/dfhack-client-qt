@@ -39,23 +39,21 @@ int main(int argc, char *argv[])
 	QFutureWatcher<void> watcher;
 	QObject::connect(&watcher, &QFutureWatcher<void>::finished, &app, &QCoreApplication::quit);
 
-	DFHack::Core::RunCommand run_command(&client);
-	DFHack::Core::Suspend suspend(&client);
-	DFHack::Core::Resume resume(&client);
+	DFHack::Core core;
 
 	watcher.setFuture(client.connect("localhost", DFHack::Client::DefaultPort).then([&](bool success) {
 		if (!success)
 			throw std::runtime_error("Failed to connect");
-		auto args = run_command.args();
+		auto args = core.runCommand.args();
 		args.set_command("ls");
 		args.clear_arguments();
-		return run_command(args).first;
+		return core.runCommand(client, args).first;
 	}).unwrap().then([&](DFHack::CallReply<dfproto::EmptyMessage> reply) {
 		qInfo() << "command result:" << static_cast<int>(reply.cr);
-		return suspend().first;
+		return core.suspend(client).first;
 	}).unwrap().then([&](DFHack::CallReply<dfproto::IntMessage> reply) {
 		qInfo() << "suspend: " << static_cast<int>(reply.cr);
-		return resume().first;
+		return core.resume(client).first;
 	}).unwrap().then([&](DFHack::CallReply<dfproto::IntMessage> reply) {
 		qInfo() << "resume: " << static_cast<int>(reply.cr);
 		return client.disconnect();

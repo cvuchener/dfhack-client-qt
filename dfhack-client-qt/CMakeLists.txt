@@ -8,7 +8,6 @@ set(PUBLIC_HEADERS
 	Core.h
 	Basic.h
 	globals.h
-	static_string.h
 )
 set(SOURCES
 	Client.cpp

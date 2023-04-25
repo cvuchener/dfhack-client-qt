@@ -27,17 +27,17 @@
 namespace DFHack
 {
 
-namespace Basic
+struct Basic
 {
-	using GetVersion = Function<"", "GetVersion", dfproto::EmptyMessage, dfproto::StringMessage>;
-	using GetDFVersion = Function<"", "GetDFVersion", dfproto::EmptyMessage, dfproto::StringMessage>;
-	using GetWorldInfo = Function<"", "GetWorldInfo", dfproto::EmptyMessage, dfproto::GetWorldInfoOut>;
-	using ListEnums = Function<"", "ListEnums", dfproto::EmptyMessage, dfproto::ListEnumsOut>;
-	using ListJobSkills = Function<"", "ListJobSkills", dfproto::EmptyMessage, dfproto::ListJobSkillsOut>;
-	using ListMaterials = Function<"", "ListMaterials", dfproto::ListMaterialsIn, dfproto::ListMaterialsOut>;
-	using ListUnits = Function<"", "ListUnits", dfproto::ListUnitsIn, dfproto::ListUnitsOut>;
-	using ListSquads = Function<"", "ListSquads", dfproto::ListSquadsIn, dfproto::ListSquadsOut>;
-	using SetUnitLabors = Function<"", "SetUnitLabors", dfproto::SetUnitLaborsIn, dfproto::EmptyMessage>;
+	const Function<dfproto::EmptyMessage, dfproto::StringMessage> getVersion = {"", "GetVersion"};
+	const Function<dfproto::EmptyMessage, dfproto::StringMessage> getDFVersion = {"", "GetDFVersion"};
+	const Function<dfproto::EmptyMessage, dfproto::GetWorldInfoOut> getWorldInfo = {"", "GetWorldInfo"};
+	const Function<dfproto::EmptyMessage, dfproto::ListEnumsOut> listEnums = {"", "ListEnums"};
+	const Function<dfproto::EmptyMessage, dfproto::ListJobSkillsOut> listJobSkills = {"", "ListJobSkills"};
+	const Function<dfproto::ListMaterialsIn, dfproto::ListMaterialsOut> listMaterials = {"", "ListMaterials"};
+	const Function<dfproto::ListUnitsIn, dfproto::ListUnitsOut> listUnits = {"", "ListUnits"};
+	const Function<dfproto::ListSquadsIn, dfproto::ListSquadsOut> listSquads = {"", "ListSquads"};
+	const Function<dfproto::SetUnitLaborsIn, dfproto::EmptyMessage> setUnitLabors = {"", "SetUnitLabors"};
 };
 
 } // namespace DFHack

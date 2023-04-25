@@ -28,9 +28,6 @@
 
 MainWindow::MainWindow(QWidget *parent)
 	: QMainWindow(parent)
-	, run_command(&client)
-	, suspend(&client)
-	, resume(&client)
 {
 	qRegisterMetaType<DFHack::CommandResult>();
 	qRegisterMetaType<DFHack::Color>();
@@ -122,7 +119,7 @@ void MainWindow::on_send_command_action_triggered()
 	status_bar->clearMessage();
 
 	if (auto args = parse_command(command_line->text().toStdString())) {
-		auto [res, text] = run_command(*args);
+		auto [res, text] = core.runCommand(client, *args);
 		command_watcher.setFuture(res);
 		notification_watcher.setFuture(text);
 	}
@@ -133,12 +130,12 @@ void MainWindow::on_send_command_action_triggered()
 
 void MainWindow::on_suspend_action_triggered()
 {
-	suspend();
+	core.suspend(client);
 }
 
 void MainWindow::on_resume_action_triggered()
 {
-	resume();
+	core.resume(client);
 }
 
 void MainWindow::dfhackConnectionChanged(bool connected)
