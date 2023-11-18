@@ -26,6 +26,9 @@
 #include <queue>
 
 #include <QtDebug>
+#include <QLoggingCategory>
+Q_DECLARE_LOGGING_CATEGORY(ClientLog)
+Q_LOGGING_CATEGORY(ClientLog, "dfhack-client");
 
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
@@ -84,7 +87,7 @@ struct call_t {
 	void finish(CommandResult cr)
 	{
 #ifdef DFHACK_CLIENT_QT_DEBUG
-		qDebug() << "finished call" << static_cast<int>(cr);
+		qCDebug(ClientLog) << "finished call" << static_cast<int>(cr);
 #endif
 		result.addResult(CallReply<>{cr, std::move(out_msg)});
 		result.finish();
@@ -139,7 +142,7 @@ struct Client::Private
 	{
 		auto ret = socket.read(data+bytes_read, size-bytes_read);
 		if (ret == -1) {
-			qCritical() << "Failed to read data from socket";
+			qCCritical(ClientLog) << "Failed to read data from socket";
 			state = State::Disconnected;
 			socket.close();
 			return ReadStatus::Failed;
@@ -156,7 +159,7 @@ struct Client::Private
 		while (size > 0) {
 			qint64 r;
 			if (-1 == (r = socket.write(data, size))) {
-				qCritical() << "Failed to write data to socket";
+				qCCritical(ClientLog) << "Failed to write data to socket";
 				state = State::Disconnected;
 				socket.close();
 				return false;
@@ -206,7 +209,7 @@ QFuture<bool> Client::connect(const QString &host, quint16 port)
 		switch (p->state) {
 		case State::Disconnected:
 #ifdef DFHACK_CLIENT_QT_DEBUG
-			qDebug() << "connecting to host";
+			qCDebug(ClientLog) << "connecting to host";
 #endif
 			p->state = State::Connecting;
 			p->connect_promise = std::move(promise);
@@ -262,7 +265,7 @@ std::pair<QFuture<CallReply<>>, QFuture<TextNotification>> Client::enqueueCall(
 	QMetaObject::invokeMethod(this, [this, call = std::move(call)]() mutable {
 			if (p->socket.state() != QAbstractSocket::ConnectedState) {
 #ifdef DFHACK_CLIENT_QT_DEBUG
-				qDebug() << "call with unconnected client";
+				qCDebug(ClientLog) << "call with unconnected client";
 #endif
 				call.finish(CommandResult::LinkFailure);
 				return;
@@ -270,12 +273,12 @@ std::pair<QFuture<CallReply<>>, QFuture<TextNotification>> Client::enqueueCall(
 #ifdef DFHACK_CLIENT_QT_DEBUG
 			visit(overloaded{
 				[](int id) {
-					qDebug() << "queue RPC call with id" << id;
+					qCDebug(ClientLog) << "queue RPC call with id" << id;
 				},
 				[](const std::shared_ptr<Binding> &binding) {
-					qDebug() << "queue RPC call with binding";
-					qDebug() << "finished:" << binding->result.isFinished();
-					qDebug() << "id:" << binding->id;
+					qCDebug(ClientLog) << "queue RPC call with binding";
+					qCDebug(ClientLog) << "finished:" << binding->result.isFinished();
+					qCDebug(ClientLog) << "id:" << binding->id;
 				}}, call.id);
 #endif
 			p->call_queue.push(std::move(call));
@@ -310,7 +313,7 @@ void Client::sendNextCall()
 			}
 		}, call.id);
 #ifdef DFHACK_CLIENT_QT_DEBUG
-		qDebug() << "send next call" << id;
+		qCDebug(ClientLog) << "send next call" << id;
 #endif
 		if (id == MessageHeader::RequestQuit) {
 			hdr.id = MessageHeader::RequestQuit;
@@ -330,7 +333,7 @@ void Client::sendNextCall()
 	}
 	catch (CommandResult cr) {
 #ifdef DFHACK_CLIENT_QT_DEBUG
-		qDebug() << "failed to send next call" << QString::fromLocal8Bit(std::error_code(cr).message());
+		qCDebug(ClientLog) << "failed to send next call" << QString::fromLocal8Bit(std::error_code(cr).message());
 #endif
 		finishCall(cr);
 		if (!p->call_queue.empty())
@@ -342,7 +345,7 @@ void Client::readyRead()
 {
 	assert(p->socket.state() == QAbstractSocket::ConnectedState);
 #ifdef DFHACK_CLIENT_QT_DEBUG
-	qDebug() << "read data" << static_cast<int>(p->state);
+	qCDebug(ClientLog) << "read data" << static_cast<int>(p->state);
 #endif
 
 	while (p->state != State::Ready) {
@@ -354,14 +357,14 @@ void Client::readyRead()
 			if (ret == ReadStatus::Partial)
 				return;
 			if (!std::ranges::equal(p->handshake.magic, HandshakePacket::ReplyMagic)) {
-				qCritical() << "Handshake message mismatch" << QByteArray(p->handshake.magic, HandshakePacket::MagicSize);
+				qCCritical(ClientLog) << "Handshake message mismatch" << QByteArray(p->handshake.magic, HandshakePacket::MagicSize);
 				p->state = State::Disconnected;
 				p->socket.close();
 				finishConnection(false);
 				return;
 			}
 #ifdef DFHACK_CLIENT_QT_DEBUG
-			qDebug() << "handshake ok";
+			qCDebug(ClientLog) << "handshake ok";
 #endif
 
 			p->state = State::Ready;
@@ -397,12 +400,12 @@ void Client::readyRead()
 				break;
 			case MessageHeader::ReplyText: {
 				if (!p->notification.ParseFromArray(p->payload.data(), p->payload.size())) {
-					qCritical() << "Failed to parse CoreTextNotification";
+					qCCritical(ClientLog) << "Failed to parse CoreTextNotification";
 				}
 				for (const auto &fragment: p->notification.fragments()) {
 					auto text = QString::fromStdString(fragment.text());
 #ifdef DFHACK_CLIENT_QT_DEBUG
-					qDebug() << "DFHack notification:" << text;
+					qCDebug(ClientLog) << "DFHack notification:" << text;
 #endif
 					call.notifications.addResult(TextNotification {
 							static_cast<Color>(fragment.color()),
@@ -415,14 +418,14 @@ void Client::readyRead()
 				break;
 			}
 			default:
-				qCritical() << "Unknown message id in header";
+				qCCritical(ClientLog) << "Unknown message id in header";
 				finishCall(CommandResult::LinkFailure);
 			}
 			break;
 		}
 		default:
 			if (p->socket.bytesAvailable() > 0)
-				qCritical() << "Unexpected data"
+				qCCritical(ClientLog) << "Unexpected data"
 					<< ", state:" << static_cast<int>(p->state)
 					<< ", bytes:" << p->socket.bytesAvailable();
 			return;
@@ -435,7 +438,7 @@ void Client::readyRead()
 void Client::connected()
 {
 #ifdef DFHACK_CLIENT_QT_DEBUG
-	qDebug() << "handshake";
+	qCDebug(ClientLog) << "handshake";
 #endif
 
 	HandshakePacket packet;
@@ -449,7 +452,7 @@ void Client::connected()
 void Client::disconnected()
 {
 #ifdef DFHACK_CLIENT_QT_DEBUG
-	qDebug() << "disconnected";
+	qCDebug(ClientLog) << "disconnected";
 #endif
 	if (p->state != State::Disconnecting) {
 		qWarning() << "Socket unexpectedly disconnected";
@@ -473,7 +476,7 @@ void Client::error(QAbstractSocket::SocketError error)
 {
 	if (p->state == State::Disconnecting && error == QAbstractSocket::RemoteHostClosedError)
 		return;
-	qCritical() << "DFHack client socket error:" << p->socket.errorString();
+	qCCritical(ClientLog) << "DFHack client socket error:" << p->socket.errorString();
 	if (p->state == State::Connecting)
 		finishConnection(false);
 	p->state = State::Disconnected;
@@ -491,7 +494,7 @@ void Client::finishConnection(bool success)
 void Client::finishCall(CommandResult result)
 {
 #ifdef DFHACK_CLIENT_QT_DEBUG
-	qDebug() << "call finished" << static_cast<int>(result);
+	qCDebug(ClientLog) << "call finished" << static_cast<int>(result);
 #endif
 	p->state = State::Ready;
 	auto call = std::move(p->call_queue.front());
