@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.5)
 project(dfhack-qt-console)
 
 add_executable(test-chain test-chain.cpp)
