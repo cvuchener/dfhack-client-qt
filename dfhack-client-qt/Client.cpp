@@ -317,9 +317,7 @@ void Client::sendNextCall()
 			hdr.size = 0;
 			p->state = State::Disconnecting;
 			p->write(&hdr);
-			call.finish(CommandResult::Ok);
-			p->call_queue.pop();
-			p->socket.disconnectFromHost();
+			// The call will finish when disconnecting
 		}
 		else {
 			hdr.id = id;
