@@ -22,6 +22,7 @@
 #include <dfhack-client-qt/Core.h>
 
 #include <QtDebug>
+#include <iostream>
 
 struct ClientThread
 {
@@ -68,21 +69,26 @@ int main(int argc, char *argv[])
 		in.set_command("ls");
 		in.clear_arguments();
 		auto [reply, notifications] = core.runCommand(client, in);
-		reply.waitForFinished();
+		notifications.waitForFinished();
 		for (const auto &n: notifications.results())
-			qInfo() << n.second;
-		qInfo() << "command result:" << static_cast<int>(reply.result().cr);
+			std::cout << n.second.toStdString();
+		qInfo() << "command result:" << make_error_code(reply.result().cr).message();
 	}
 
 	{
 		auto [reply, notifications] = core.suspend(client);
-		reply.waitForFinished();
-		qInfo() << "suspend:" << static_cast<int>(reply.result().cr);
+		auto r = reply.result();
+		qInfo() << "suspend result:" << make_error_code(r.cr).message();
+		if (r)
+			qInfo() << "suspend value:" << r->value();
 	}
 
 	{
 		auto [reply, notifications] = core.resume(client);
-		qInfo() << "resume:" << static_cast<int>(reply.result().cr);
+		auto r = reply.result();
+		qInfo() << "resume result:" << make_error_code(r.cr).message();
+		if (r)
+			qInfo() << "resume value:" << r->value();
 	}
 
 	client.disconnect().waitForFinished();

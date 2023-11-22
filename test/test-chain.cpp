@@ -29,19 +29,22 @@ int main(int argc, char *argv[])
 	QCoreApplication app(argc, argv);
 	DFHack::Client client;
 
-	QObject::connect(&client, &DFHack::Client::socketError, [](QAbstractSocket::SocketError, const QString &error) {
-		qCritical() << "socket error:" << error;
-	});
-	QObject::connect(&client, &DFHack::Client::notification, [](DFHack::Color, const QString &text) {
-		qInfo() << text;
-	});
+	QObject::connect(&client, &DFHack::Client::socketError,
+			[](QAbstractSocket::SocketError, const QString &error) {
+				qCritical() << "socket error:" << error;
+			});
+	QObject::connect(&client, &DFHack::Client::notification,
+			[](DFHack::Color, const QString &text) {
+				qInfo() << text;
+			});
 
 	QFutureWatcher<void> watcher;
 	QObject::connect(&watcher, &QFutureWatcher<void>::finished, &app, &QCoreApplication::quit);
 
 	DFHack::Core core;
 
-	watcher.setFuture(client.connect("localhost", DFHack::Client::DefaultPort).then([&](bool success) {
+	watcher.setFuture(client.connect("localhost", DFHack::Client::DefaultPort)
+	.then([&](bool success) {
 		if (!success)
 			throw std::runtime_error("Failed to connect");
 		auto args = core.runCommand.args();
@@ -49,13 +52,17 @@ int main(int argc, char *argv[])
 		args.clear_arguments();
 		return core.runCommand(client, args).first;
 	}).unwrap().then([&](DFHack::CallReply<dfproto::EmptyMessage> reply) {
-		qInfo() << "command result:" << static_cast<int>(reply.cr);
+		qInfo() << "command result:" << make_error_code(reply.cr).message();
 		return core.suspend(client).first;
 	}).unwrap().then([&](DFHack::CallReply<dfproto::IntMessage> reply) {
-		qInfo() << "suspend: " << static_cast<int>(reply.cr);
+		qInfo() << "suspend result: " << make_error_code(reply.cr).message();
+		if (reply)
+			qInfo() << "suspend value: " << reply->value();
 		return core.resume(client).first;
 	}).unwrap().then([&](DFHack::CallReply<dfproto::IntMessage> reply) {
-		qInfo() << "resume: " << static_cast<int>(reply.cr);
+		qInfo() << "resume result: " << make_error_code(reply.cr).message();
+		if (reply)
+			qInfo() << "resume value: " << reply->value();
 		return client.disconnect();
 	}).unwrap().onFailed([](std::exception &e) {
 		qCritical() << e.what();

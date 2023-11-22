@@ -10,6 +10,7 @@ Widgets module is also required for the console example.
 ### CMake options
 
  - `BUILD_CONSOLE_EXAMPLE`: build the remote console example (default: `OFF`).
+ - `BUILD_TEST`: build test examples in the `test` directory (default: `OFF`).
 
 
 How to use
@@ -24,9 +25,11 @@ connection success.
 The best way to call remote function is to use
 [Function](dfhack-client-qt/Function.h) objects. You can check
 [Core.h](dfhack-client-qt/Core.h) or [Basic.h](dfhack-client-qt/Basic.h) for an
-example on how to conveniently declare Function types. Functions must be bound
-before the can be called. Bind operations and calls are asynchronous, they
-return immediately. 
+example on how to conveniently declare Function objects.
+
+Functions may be bound before they can be called. If not already bound the
+function will be bound on the first call. Bind operations and calls are
+asynchronous, they return immediately a QFuture (or pair of QFuture).
 
 ### Synchronous example
 
@@ -35,13 +38,12 @@ must be run in another thread. Calls will not progress if the client's thread
 is blocked.
 
 ```c++
-MyFunction my_function(&client);
+const MyFunction my_function{"MyPlugin", "MyFunction"};
 
-// bind function
-auto br = my_function.bind();
-br.waitForFinished();
+// optional: bind function
+auto br = my_function.bind(client);
 if (!br.result()) {
-    // handle error here
+    // handle bind error here
 }
 
 // set parameters
@@ -49,17 +51,18 @@ auto my_function_args = my_function.args();
 my_function_args.set_foo("bar");
 
 // call function
-auto [cr, notifications] = my_function.call(my_function_args);
-cr.waitForFinished();
-auto reply = cr.result();
-if (!reply) {
+auto [reply, notifications] = my_function(client, my_function_args);
+auto res = reply.result();
+if (!res) {
     // handle error here
+    std::cerr << "Failed to call my_function: "
+              << make_error_code(res.cr).message()
+              << std::endl;
 }
-
-// get results
-auto result = reply->foo();
-
-// ...
+else {
+    // get result content
+    auto foo = res->foo();
+}
 ```
 
 See also example in [test-sync](test/test-sync.cpp).
@@ -75,8 +78,6 @@ Use QFutureWatcher to get signals from futures.
     // connect signals
     connect(&client, &DFHack::Client::connectionChanged,
             this, &Example::onConnectionChanged);
-    connect(&bind_watcher, &QFutureWatcher<bool>::finished,
-            this, &Example::onFunctionBound);
     connect(&command_watcher, &QFutureWatcher<DFHack::CallReply<MyFunctionReply>>::finished,
             this, &Example::onFunctionFinished);
 
@@ -84,21 +85,11 @@ Use QFutureWatcher to get signals from futures.
 
 void Example::onConnectionChanged(bool connected) {
     if (connected) {
-        // functions can now be bound
-        bind_watcher.setFuture(my_function.bind());
+        // the function can now be called
+        auto my_function_args = my_function.args();
+        my_function_args.set_foo("bar");
+        command_watcher.setFuture(my_function(client, my_function_args).first);
     }
-}
-
-void Example::onFunctionBound(bool success) {
-    if (!success) {
-        // handle error here
-        return;
-    }
-
-    // the function can now be called
-    auto my_function_args = my_function.args();
-    my_function_args.set_foo("bar");
-    command_watcher.setFuture(my_function.call(my_function_args).first);
 }
 
 void Example::onFunctionFinished(DFHack::CallReply<MyFunctionReply> reply)
