@@ -46,8 +46,13 @@ set_target_properties(dfhack-client-qt PROPERTIES
 install(TARGETS dfhack-client-qt
 	EXPORT DFHackClientQtTargets
 	RUNTIME DESTINATION "bin"
+		COMPONENT Runtime
 	LIBRARY DESTINATION "lib"
+		COMPONENT Runtime
 	ARCHIVE DESTINATION "lib"
-	PUBLIC_HEADER DESTINATION "include/dfhack-client-qt")
+		COMPONENT Development
+	PUBLIC_HEADER DESTINATION "include/dfhack-client-qt"
+		COMPONENT Development
+)
 
 

@@ -23,6 +23,10 @@ endif()
 install(EXPORT DFHackClientQtTargets
 	FILE DFHackClientQtTargets.cmake
 	NAMESPACE DFHackClientQt::
-	DESTINATION lib/cmake/DFHackClientQt)
+	DESTINATION lib/cmake/DFHackClientQt
+	COMPONENT Development
+)
 install(FILES cmake/DFHackClientQtConfig.cmake
-	DESTINATION lib/cmake/DFHackClientQt)
+	DESTINATION lib/cmake/DFHackClientQt
+	COMPONENT Development
+)
