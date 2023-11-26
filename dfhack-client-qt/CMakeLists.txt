@@ -55,4 +55,5 @@ install(TARGETS dfhack-client-qt
 		COMPONENT Development
 )
 
+add_library(DFHackClientQt::dfhack-client-qt ALIAS dfhack-client-qt)
 
