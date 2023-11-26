@@ -19,7 +19,7 @@ include_directories(
 )
 
 add_executable(dfhack-qt-console ${SOURCES} ${UI_SOURCES} ${MOC_SOURCES})
-target_link_libraries(dfhack-qt-console DFHackClientQt::dfhack-client-qt ${PROTOBUF_LIBRARIES} Qt::Widgets)
+target_link_libraries(dfhack-qt-console DFHackClientQt::dfhack-client-qt Qt::Widgets)
 
 install(TARGETS dfhack-qt-console
 	RUNTIME DESTINATION bin)
