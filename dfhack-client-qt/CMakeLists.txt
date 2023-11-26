@@ -25,7 +25,7 @@ protobuf_generate_cpp(PROTO_SOURCES PROTO_HEADERS
 )
 list(APPEND PUBLIC_HEADERS ${PROTO_HEADERS})
 
-add_library(dfhack-client-qt SHARED ${SOURCES} ${MOC_SOURCES} ${PROTO_SOURCES})
+add_library(dfhack-client-qt ${SOURCES} ${MOC_SOURCES} ${PROTO_SOURCES})
 target_compile_features(dfhack-client-qt PUBLIC cxx_std_20)
 target_include_directories(dfhack-client-qt PUBLIC
 	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>

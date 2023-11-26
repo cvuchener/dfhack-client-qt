@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.5)
-project(dfhack-remote-client-qt)
+project(dfhack-client-qt)
 
+option(BUILD_SHARED_LIBS "Build dfhack-client-qt as a shared library" OFF)
 option(BUILD_TEST "build test" OFF)
 option(BUILD_CONSOLE_EXAMPLE "build DFHack remote console example" OFF)
 
